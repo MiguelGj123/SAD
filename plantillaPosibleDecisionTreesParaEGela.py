@@ -39,8 +39,6 @@ from imblearn.under_sampling import RandomUnderSampler
 from imblearn.over_sampling import RandomOverSampler
 from tqdm import tqdm
 
-from kNN import calculate_fscore
-
 
 # Funciones auxiliares
 
@@ -526,17 +524,7 @@ def mostrar_resultados(gs, x_dev, y_dev):
     - Matriz de confusión del clasificador en el conjunto de desarrollo.
     """
 
-    def calculate_classification_report(y_true, y_pred):
-        """
-        Genera un informe de texto con Precision, Recall y F1 para cada clase.
-        """
-        return classification_report(y_true, y_pred, zero_division=0)
 
-    def calculate_confusion_matrix(y_true, y_pred):
-        """
-        Genera la matriz de confusión para ver dónde se equivoca el modelo.
-        """
-        return confusion_matrix(y_true, y_pred)
 
     if args.verbose:
         print(Fore.MAGENTA+"> Mejores parametros:\n"+Fore.RESET, gs.best_params_)
@@ -546,7 +534,29 @@ def mostrar_resultados(gs, x_dev, y_dev):
         print(Fore.MAGENTA+"> Informe de clasificación:\n"+Fore.RESET, calculate_classification_report(y_dev, gs.predict(x_dev)))
         print(Fore.MAGENTA+"> Matriz de confusión:\n"+Fore.RESET, calculate_confusion_matrix(y_dev, gs.predict(x_dev)))
 
+def calculate_classification_report(y_true, y_pred):
+    """
+    Genera un informe de texto con Precision, Recall y F1 para cada clase.
+    """
+    return classification_report(y_true, y_pred, zero_division=0)
 
+def calculate_confusion_matrix(y_true, y_pred):
+    """
+    Genera la matriz de confusión para ver dónde se equivoca el modelo.
+    """
+    return confusion_matrix(y_true, y_pred)
+
+def calculate_fscore(y_true, y_pred):
+    """
+    Calcula el F1-Score en sus variantes Micro y Macro.
+    :param y_true: Etiquetas reales del examen.
+    :param y_pred: Etiquetas que ha adivinado el modelo.
+    :return: Tupla con (f1_micro, f1_macro)
+    """
+    # Calculamos ambas versiones
+    f1_micro = f1_score(y_true, y_pred, average='micro')
+    f1_macro = f1_score(y_true, y_pred, average='macro')
+    return f1_micro, f1_macro
 
 def kNN():
     """
@@ -638,12 +648,29 @@ def random_forest():
     # Hacemos un barrido de hiperparametros
     with tqdm(total=100, desc='Procesando random forest', unit='iter', leave=True) as pbar:
         #TODO Llamar al decision trees
-        #gs = GridSearchCV(
+
+        # 1. Instanciamos el modelo base (El Bosque)
+        rf = RandomForestClassifier(random_state=42)
+
+        # 2. Configuramos la Búsqueda en Cuadrícula leyendo args.random_forest del JSON
+        gs = GridSearchCV(estimator=rf,
+                          param_grid=args.random_forest,
+                          cv=5,
+                          n_jobs=args.cpu,
+                          scoring=args.estimator)
+
+        # 3. Entrenamos midiendo el tiempo
+        start_time = time.time()
+        gs.fit(x_train, y_train)
+        end_time = time.time()
+
+        # Actualizamos la barra de progreso
+        pbar.update(100)
+
     execution_time = end_time - start_time
-    print("Tiempo de ejecución:"+Fore.MAGENTA, execution_time,Fore.RESET+ "segundos")
-    
     # Mostramos los resultados
     mostrar_resultados(gs, x_dev, y_dev)
+    print("Tiempo de ejecución: " + Fore.MAGENTA + str(execution_time) + Fore.RESET + " segundos")
     
     # Guardamos el modelo utilizando pickle
     save_model(gs)
