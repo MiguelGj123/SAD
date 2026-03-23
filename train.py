@@ -7,6 +7,7 @@ import random
 import sys
 import signal
 import argparse
+import re
 
 import pandas as pd
 import numpy as np
@@ -60,6 +61,7 @@ def parse_args():
     parse.add_argument("-j", "--json", help="Fichero de configuración .json (/Path_to_file)", required=True)
     parse.add_argument("-a", "--algorithm", help="Algoritmo a ejecutar (kNN, decision_tree o random_forest)", required=True)
     parse.add_argument("-p", "--prediction", help="Columna a predecir (Nombre de la columna)", required=True)
+    parse.add_argument("-mn", "--model_name", help="'y' para que se escriban los hiperparámetros en el nombre del mejor modelo, 'n' para que no.", required=False, default='n')
     parse.add_argument("-e", "--estimator", help="Estimador a utilizar para elegir el mejor modelo https://scikit-learn.org/stable/modules/model_evaluation.html#scoring-parameter", required=False, default=None)
     parse.add_argument("-c", "--cpu", help="Número de CPUs a utilizar [-1 para usar todos]", required=False, default=-1, type=int)
     parse.add_argument("-v", "--verbose", help="Muestra las metricas por la terminal", required=False, default=False, action="store_true")
@@ -106,21 +108,19 @@ def select_features():
         categorical_feature (DataFrame): DataFrame que contiene las características categóricas.
     """
     try:
-        #Quitar la columna a predecir
-        data_features = data.drop(columns=[args.prediction], errors="ignore")
 
         # Numerical features
-        numerical_feature = data_features.select_dtypes(include=['int64', 'float64']) # Columnas numéricas
+        numerical_feature = data.select_dtypes(include=['int64', 'float64']) # Columnas numéricas
 
         # Categorical features
-        categorical_feature = data_features.select_dtypes(include='object')
+        categorical_feature = data.select_dtypes(include='object')
         #Quedarse solo con los atributos categoricos que tengan X o menos posibles valores distintos.
         # X se define en el json en unique_category_threshold.
         categorical_feature = categorical_feature.loc[:, categorical_feature.nunique() <= args.preprocessing["unique_category_threshold"]]
         
         # Text features
         # Selecciona todas las columnas categoricas, y solo se quedan con las que tienen más de X posibles valores distintos.
-        text_feature = data_features.select_dtypes(include='object').drop(columns=categorical_feature.columns)
+        text_feature = data.select_dtypes(include='object').drop(columns=categorical_feature.columns)
 
         print(Fore.GREEN+"Datos separados con éxito"+Fore.RESET)
         
@@ -427,6 +427,19 @@ def preprocesar_datos():
     :param data: Datos a preprocesar
     :return: Datos preprocesados y divididos en train y test
     """
+
+    global data
+
+    # Guardamos la target
+    y = data[args.prediction]
+
+    # Tratamos missing values de la target (si hace falta)
+    if y.isnull().any():
+        y = y.fillna(y.mode()[0])  # para clasificación
+
+    # Nos quedamos solo con features
+    data = data.drop(columns=[args.prediction])
+
     # Borrar columnas no necesarias
     drop_features()
 
@@ -450,6 +463,9 @@ def preprocesar_datos():
     
     # Realizamos Oversampling o Undersampling
     over_under_sampling()
+
+    #devolvemos a data los valores del target, solo habiendo procesado missing values (evitar errores)
+    data[args.prediction] = y
 
     return data
 
@@ -506,9 +522,26 @@ def save_model(gs):
 
     """
     try:
-        with open('output/modelo.pkl', 'wb') as file:
-            pickle.dump(gs, file)
-            print(Fore.CYAN+"Modelo guardado con éxito"+Fore.RESET)
+
+        if args.model_name == 'y':
+            # Convertimos los hiperparámetros a un string seguro para nombre de archivo
+            best_params = gs.best_params_
+            params_str = json.dumps(best_params)  # convierte a string tipo JSON
+            # Eliminamos caracteres que no son válidos en nombres de archivo
+            nombre = re.sub(r'[^a-zA-Z0-9]', '_', params_str)
+            nombre = str(args.algorithm)+"_"+str(nombre)
+
+            with open(f'output/modelo_{nombre}.pkl', 'wb') as file:
+                pickle.dump(gs, file)
+                print(Fore.CYAN+"Modelo guardado con éxito"+Fore.RESET)
+        elif args.model_name == 'n':
+            with open(f'output/modelo.pkl', 'wb') as file:
+                pickle.dump(gs, file)
+                print(Fore.CYAN+"Modelo guardado con éxito"+Fore.RESET)
+        else:
+            print(Fore.RED + "Opción 'model_name' mal utilizada" + Fore.RESET)
+            raise Exception
+
         with open('output/modelo.csv', 'w') as file:
             writer = csv.writer(file)
             writer.writerow(['Params', 'Score'])

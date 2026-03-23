@@ -39,7 +39,6 @@ from imblearn.under_sampling import RandomUnderSampler
 from imblearn.over_sampling import RandomOverSampler
 from tqdm import tqdm
 
-
 # Funciones auxiliares
 
 def signal_handler(sig, frame):
@@ -60,7 +59,7 @@ def parse_args():
     parse.add_argument("-m", "--model", help="Fichero de modelo .pkl (/Path_to_file)", required=True)
     parse.add_argument("-j", "--json", help="Fichero de configuración .json (/Path_to_file)", required=True)
     parse.add_argument("-p", "--prediction", help="Columna a predecir (Nombre de la columna)", required=True)
-    parse.add_argument("-v", "--verbose", help="Muestra las metricas por la terminal", required=False, default=False, action="store_true")
+    parse.add_argument("-v", "--verbose", help="Muestra un resumen de los resultados por la terminal", required=False, default=False, action="store_true")
     parse.add_argument("--debug", help="Modo debug [Muestra informacion extra del preprocesado y almacena el resultado del mismo en un .csv]", required=False, default=False, action="store_true")
     # Parseamos los argumentos
     args = parse.parse_args()
@@ -104,21 +103,19 @@ def select_features():
         categorical_feature (DataFrame): DataFrame que contiene las características categóricas.
     """
     try:
-        #Quitar la columna a predecir
-        data_features = data.drop(columns=[args.prediction], errors="ignore")
 
         # Numerical features
-        numerical_feature = data_features.select_dtypes(include=['int64', 'float64']) # Columnas numéricas
+        numerical_feature = data.select_dtypes(include=['int64', 'float64']) # Columnas numéricas
 
         # Categorical features
-        categorical_feature = data_features.select_dtypes(include='object')
+        categorical_feature = data.select_dtypes(include='object')
         #Quedarse solo con los atributos categoricos que tengan X o menos posibles valores distintos.
         # X se define en el json en unique_category_threshold.
         categorical_feature = categorical_feature.loc[:, categorical_feature.nunique() <= args.preprocessing["unique_category_threshold"]]
         
         # Text features
         # Selecciona todas las columnas categoricas, y solo se quedan con las que tienen más de X posibles valores distintos.
-        text_feature = data_features.select_dtypes(include='object').drop(columns=categorical_feature.columns)
+        text_feature = data.select_dtypes(include='object').drop(columns=categorical_feature.columns)
 
         print(Fore.GREEN+"Datos separados con éxito"+Fore.RESET)
         
@@ -349,9 +346,6 @@ def drop_features():
     """
     global data
     try:
-        # Quitar la columna a predecir
-        data = data.drop(columns=[args.prediction], errors="ignore")
-
         atributos_eliminar = args.preprocessing.get("drop_features", [])
         if len(atributos_eliminar) >0:
             data = data.drop(columns=atributos_eliminar)
@@ -367,7 +361,8 @@ def drop_features():
 def preprocesar_datos():
     """
     Función para preprocesar los datos
-        1. Borramos columnas no necesarias (Especificarlas en .json)
+        1. Borramos target si existe (generalmente no habrá porque es dataset a predecir).
+        2. Borramos columnas no necesarias (Especificarlas en .json)
         2. Separamos los datos por tipos (Categoriales, numéricos y textos)
         3. Tratamos missing values (Eliminar y imputar)
         4. Pasar los datos de categoriales a numéricos
@@ -377,6 +372,22 @@ def preprocesar_datos():
     :param data: Datos a preprocesar
     :return: Datos preprocesados y divididos en train y test
     """
+    global data
+
+    # Nos quedamos solo con features, y guardamos el target por si acaso se incluye, para comparar predicciones
+    # (NO SE USA EL TARGET EN LA PREDICCIÓN)
+    if args.prediction in data.columns:
+
+        y = data[args.prediction]
+
+        # Tratamos missing values de la target (si hace falta)
+        if y.isnull().any():
+            y = y.fillna(y.mode()[0])  # para clasificación
+
+        data = data.drop(columns=[args.prediction], errors="ignore")
+    else:
+        y = None #No se incluye un target para comparar
+
     # Borrar columnas no necesarias
     drop_features()
 
@@ -398,47 +409,11 @@ def preprocesar_datos():
     # Tratamos el texto
     process_text(text_feature)
 
+    # devolvemos a data los valores del target, si existe, temporalmente
+    if y is not None:
+        data[args.prediction] = y
+
     return data
-
-# Funciones para entrenar un modelo
-
-def divide_data():
-    """
-    Función que divide los datos en conjuntos de entrenamiento y desarrollo.
-
-    Parámetros:
-    - data: DataFrame que contiene los datos.
-    - args: Objeto que contiene los argumentos necesarios para la división de datos.
-
-    Retorna:
-    - x_train: DataFrame con las características de entrenamiento.
-    - x_dev: DataFrame con las características de desarrollo.
-    - y_train: Serie con las etiquetas de entrenamiento.
-    - y_dev: Serie con las etiquetas de desarrollo.
-    """
-    # Sacamos la columna a predecir
-
-    global data  # Usamos nuestra variable global con los datos ya limpios
-    try:
-        # 1. Separamos X (las pistas) de Y (la respuesta)
-        X = data.drop(columns=[args.prediction])  # dropeamos todas menos la columna a predecir
-        y = data[args.prediction]  # Solo la columna a predecir
-
-        # 2. Partimos los datos en dos grupos
-        x_train, x_dev, y_train, y_dev = train_test_split(
-            X, y,
-            test_size=0.2,       # 20% de los datos para el examen, 80% para estudiar
-            random_state=42,  # Semilla para que el corte sea siempre el mismo si repites
-            stratify=y  # Clave: Mantiene la proporción de las categorías
-        )
-
-        print(Fore.GREEN + "Datos divididos en Train y Dev con éxito" + Fore.RESET)
-        return x_train, x_dev, y_train, y_dev
-
-    except Exception as e:
-        print(Fore.RED + "Error al dividir los datos" + Fore.RESET)
-        print(e)
-        sys.exit(1)
 
 # Funciones para predecir con un modelo
 
@@ -462,7 +437,7 @@ def load_model(model):
         print(e)
         sys.exit(1)
         
-def predict():
+def predict(y_test):
     """
     Realiza una predicción utilizando el modelo entrenado y guarda los resultados en un archivo CSV.
 
@@ -475,13 +450,36 @@ def predict():
     global data
     # Predecimos
     prediction = model.predict(data)
+
+    mostrar_resultados(prediction, y_test)
     
     # Añadimos la prediccion al dataframe data
     data = pd.concat([data, pd.DataFrame(prediction, columns=[args.prediction])], axis=1)
+
+def mostrar_resultados(pred, y_test):
+    """
+        Muestra resultados de predicción para un modelo ya entrenado sobre el conjunto de test.
+
+        Parámetros:
+        - pred: La predicción del modelo sobre el dataset
+        - y_test: La columna con los valores reales del target. Estará vacío si no se incluye en el dataset.
+    """
+
+    cont = pd.Series(pred).value_counts()
+    print(Fore.MAGENTA + "> Distribución de predicciones:\n" + Fore.RESET)
+    print(cont)
+
+    if args.verbose and y_test is not None:
+        print(Fore.MAGENTA+"> F1-score micro:\n"+Fore.RESET, f1_score(y_test, pred, average='micro'))
+        print(Fore.MAGENTA+"> F1-score macro:\n"+Fore.RESET, f1_score(y_test, pred, average='macro'))
+        print(Fore.MAGENTA+"> Informe de clasificación:\n"+Fore.RESET, classification_report(y_test, pred, zero_division=0))
+        print(Fore.MAGENTA+"> Matriz de confusión:\n"+Fore.RESET, confusion_matrix(y_test, pred))
+
     
 # Función principal
 
 if __name__ == "__main__":
+
     # Fijamos la semilla
     np.random.seed(42)
     print("=== Clasificador ===")
@@ -489,6 +487,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     # Parseamos los argumentos
     args = parse_args()
+
     # Si la carpeta output no existe la creamos
     print("\n- Creando carpeta output...")
     try:
@@ -503,6 +502,9 @@ if __name__ == "__main__":
     # Cargamos los datos
     print("\n- Cargando datos...")
     data = load_data(args.file)
+    ###para probar sin incluir target
+    #data = data.drop(columns=[args.prediction], errors="ignore")
+
     # Descargamos los recursos necesarios de nltk
     print("\n- Descargando diccionarios...")
     nltk.download('stopwords')
@@ -511,6 +513,15 @@ if __name__ == "__main__":
     # Preprocesamos los datos
     print("\n- Preprocesando datos...")
     preprocesar_datos()
+
+    # Nos quedamos solo con features, y guardamos el target por si acaso se incluye, para comparar predicciones
+    # (NO SE USA EL TARGET EN LA PREDICCIÓN)
+    if args.prediction in data.columns:
+        y = data[args.prediction]
+        data = data.drop(columns=[args.prediction], errors="ignore")
+    else:
+        y = None
+
     if args.debug:
         try:
             print("\n- Guardando datos preprocesados...")
@@ -526,7 +537,7 @@ if __name__ == "__main__":
     print("\n- Prediciendo...")
 
     try:
-        predict()
+        predict(y)
         print(Fore.GREEN+"Predicción realizada con éxito"+Fore.RESET)
         # Guardamos el dataframe con la prediccion
         data.to_csv('output/data-prediction.csv', index=False)
