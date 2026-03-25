@@ -719,6 +719,43 @@ def random_forest():
     # Guardamos el modelo utilizando pickle
     save_model(gs)
 
+
+def naive_bayes():
+    """
+    Función para implementar el algoritmo Naive Bayes.
+    """
+    from sklearn.naive_bayes import GaussianNB
+
+    # 1. Dividimos los datos usando la función de tus compañeros
+    x_train, x_dev, y_train, y_dev = divide_data()
+
+    # 2. Hacemos un barrido de hiperparámetros (coge los datos del JSON)
+    with tqdm(total=100, desc='Procesando Naive Bayes', unit='iter', leave=True) as pbar:
+        # Usamos args.naive_bayes porque en parse_args() tu grupo vuelca el JSON en args
+        gs = GridSearchCV(GaussianNB(), args.naive_bayes, cv=5, n_jobs=args.cpu, scoring=args.estimator)
+
+        start_time = time.time()
+        gs.fit(x_train, y_train)
+        end_time = time.time()
+
+        # Efecto visual de la barra de carga (igual que tus compañeros)
+        for i in range(100):
+            time.sleep(random.uniform(0.01, 0.05))
+            pbar.update(random.random() * 2)
+        pbar.n = 100
+        pbar.last_print_n = 100
+        pbar.update(0)
+
+    execution_time = end_time - start_time
+    print("Tiempo de ejecución:" + Fore.MAGENTA, f"{execution_time:.4f}", Fore.RESET + " segundos")
+
+    # 3. Mostramos los resultados usando la función de tu grupo
+    mostrar_resultados(gs, x_dev, y_dev)
+
+    # 4. Guardamos el modelo usando la función de tu grupo
+    save_model(gs)
+
+
 # Función principal
 
 if __name__ == "__main__":
@@ -779,6 +816,13 @@ if __name__ == "__main__":
         try:
             random_forest()
             print(Fore.GREEN+"Algoritmo random forest ejecutado con éxito"+Fore.RESET)
+            sys.exit(0)
+        except Exception as e:
+            print(e)
+    elif args.algorithm == "naive_bayes":
+        try:
+            naive_bayes()
+            print(Fore.GREEN + "Algoritmo Naive Bayes ejecutado con éxito" + Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
