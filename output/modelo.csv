@@ -1,0 +1,6 @@
+Params,Score
+{'var_smoothing': 1e-09},0.95
+{'var_smoothing': 1e-08},0.95
+{'var_smoothing': 1e-07},0.95
+{'var_smoothing': 1e-06},0.95
+{'var_smoothing': 1e-05},0.95
