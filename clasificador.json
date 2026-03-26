@@ -16,7 +16,7 @@
     "min_samples_leaf": [1, 2, 4]
   },
   "kNN": {
-        "n_neighbors": [3, 5, 7],
+        "n_neighbors": [4, 6, 8],
         "weights": ["uniform", "distance"],
         "metric": ["euclidean", "manhattan"]
     },
@@ -26,5 +26,8 @@
     "min_samples_split": [2, 5],
     "min_samples_leaf": [1, 2],
     "max_features": ["sqrt", "log2"]
-}
+  },
+  "naive_bayes": {
+    "var_smoothing": [1e-9, 1e-8, 1e-7, 1e-6, 1e-5]
+  }
 }

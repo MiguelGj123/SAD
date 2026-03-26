@@ -27,6 +27,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.naive_bayes import GaussianNB
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
 # Nltk
@@ -460,12 +461,12 @@ def preprocesar_datos():
     
     # Tratamos el texto
     process_text(text_feature)
+
+    # devolvemos a data los valores del target, solo habiendo procesado missing values (evitar errores)
+    data[args.prediction] = y
     
     # Realizamos Oversampling o Undersampling
     over_under_sampling()
-
-    #devolvemos a data los valores del target, solo habiendo procesado missing values (evitar errores)
-    data[args.prediction] = y
 
     return data
 
@@ -719,6 +720,42 @@ def random_forest():
     # Guardamos el modelo utilizando pickle
     save_model(gs)
 
+
+def naive_bayes():
+    """
+    Función para implementar el algoritmo Naive Bayes.
+    """
+
+    # Dividimos los datos en entrenamiento y dev
+    x_train, x_dev, y_train, y_dev = divide_data()
+
+    # Hacemos un barrido de hiperparametros
+    with tqdm(total=100, desc='Procesando Naive Bayes', unit='iter', leave=True) as pbar:
+        # Usamos args.naive_bayes porque en parse_args() tu grupo vuelca el JSON en args
+        gs = GridSearchCV(GaussianNB(), args.naive_bayes, cv=5, n_jobs=args.cpu, scoring=args.estimator)
+
+        start_time = time.time()
+        gs.fit(x_train, y_train)
+        end_time = time.time()
+
+        # Efecto visual de la barra de carga
+        for i in range(100):
+            time.sleep(random.uniform(0.01, 0.05))
+            pbar.update(random.random() * 2)
+        pbar.n = 100
+        pbar.last_print_n = 100
+        pbar.update(0)
+
+    execution_time = end_time - start_time
+    print("Tiempo de ejecución:" + Fore.MAGENTA, f"{execution_time:.4f}", Fore.RESET + " segundos")
+
+    # 3. Mostramos los resultados
+    mostrar_resultados(gs, x_dev, y_dev)
+
+    # 4. Guardamos el modelo
+    save_model(gs)
+
+
 # Función principal
 
 if __name__ == "__main__":
@@ -779,6 +816,13 @@ if __name__ == "__main__":
         try:
             random_forest()
             print(Fore.GREEN+"Algoritmo random forest ejecutado con éxito"+Fore.RESET)
+            sys.exit(0)
+        except Exception as e:
+            print(e)
+    elif args.algorithm == "naive_bayes":
+        try:
+            naive_bayes()
+            print(Fore.GREEN + "Algoritmo Naive Bayes ejecutado con éxito" + Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
