@@ -27,6 +27,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.naive_bayes import GaussianNB
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
 # Nltk
@@ -724,12 +725,11 @@ def naive_bayes():
     """
     Función para implementar el algoritmo Naive Bayes.
     """
-    from sklearn.naive_bayes import GaussianNB
 
-    # 1. Dividimos los datos usando la función de tus compañeros
+    # Dividimos los datos en entrenamiento y dev
     x_train, x_dev, y_train, y_dev = divide_data()
 
-    # 2. Hacemos un barrido de hiperparámetros (coge los datos del JSON)
+    # Hacemos un barrido de hiperparametros
     with tqdm(total=100, desc='Procesando Naive Bayes', unit='iter', leave=True) as pbar:
         # Usamos args.naive_bayes porque en parse_args() tu grupo vuelca el JSON en args
         gs = GridSearchCV(GaussianNB(), args.naive_bayes, cv=5, n_jobs=args.cpu, scoring=args.estimator)
@@ -738,7 +738,7 @@ def naive_bayes():
         gs.fit(x_train, y_train)
         end_time = time.time()
 
-        # Efecto visual de la barra de carga (igual que tus compañeros)
+        # Efecto visual de la barra de carga
         for i in range(100):
             time.sleep(random.uniform(0.01, 0.05))
             pbar.update(random.random() * 2)
@@ -749,10 +749,10 @@ def naive_bayes():
     execution_time = end_time - start_time
     print("Tiempo de ejecución:" + Fore.MAGENTA, f"{execution_time:.4f}", Fore.RESET + " segundos")
 
-    # 3. Mostramos los resultados usando la función de tu grupo
+    # 3. Mostramos los resultados
     mostrar_resultados(gs, x_dev, y_dev)
 
-    # 4. Guardamos el modelo usando la función de tu grupo
+    # 4. Guardamos el modelo
     save_model(gs)
 
 
