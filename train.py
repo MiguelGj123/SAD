@@ -784,6 +784,7 @@ if __name__ == "__main__":
     print("\n- Descargando diccionarios...")
     nltk.download('stopwords')
     nltk.download('punkt')
+    nltk.download('punkt_tab')
     nltk.download('wordnet')
     # Preprocesamos los datos
     print("\n- Preprocesando datos...")
