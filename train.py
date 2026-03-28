@@ -66,6 +66,7 @@ def parse_args():
     parse.add_argument("-c", "--cpu", help="Número de CPUs a utilizar [-1 para usar todos]", required=False, default=-1, type=int)
     parse.add_argument("-v", "--verbose", help="Muestra las metricas por la terminal", required=False, default=False, action="store_true")
     parse.add_argument("--debug", help="Modo debug [Muestra informacion extra del preprocesado y almacena el resultado del mismo en un .csv]", required=False, default=False, action="store_true")
+    parse.add_argument("-nh", "--no_header", help="Indica si el CSV no tiene cabecera para autogenerar C1, C2...", required=False, default=False, action="store_true")
     # Parseamos los argumentos
     args = parse.parse_args()
 
@@ -79,20 +80,31 @@ def parse_args():
     
     # Parseamos los argumentos
     return args
-    
+
+
 def load_data(file):
     """
     Función para cargar los datos de un fichero csv
     :param file: Fichero csv
     :return: Datos del fichero
     """
+    # Usamos global args por si acaso la variable no está en el ámbito local
+    global args
     try:
-        data = pd.read_csv(file, encoding='utf-8')
-        #Fore sirve para dar color
-        print(Fore.GREEN+"Datos cargados con éxito"+Fore.RESET)
+        if args.no_header:
+            # Si el usuario pone --no_header, leemos sin cabecera y renombramos
+            data = pd.read_csv(file, encoding='utf-8', header=None)
+            data.columns = [f"C{i + 1}" for i in range(len(data.columns))]
+            print(Fore.CYAN + "Aviso: Se han autogenerado los nombres de las columnas (C1, C2...)" + Fore.RESET)
+        else:
+            # Comportamiento normal: lee la primera fila como cabecera
+            data = pd.read_csv(file, encoding='utf-8')
+
+        print(Fore.GREEN + f"Datos cargados con éxito. Se han detectado {len(data.columns)} columnas." + Fore.RESET)
         return data
+
     except Exception as e:
-        print(Fore.RED+"Error al cargar los datos"+Fore.RESET)
+        print(Fore.RED + "Error al cargar los datos" + Fore.RESET)
         print(e)
         sys.exit(1)
 
@@ -551,33 +563,53 @@ def save_model(gs):
         print(Fore.RED+"Error al guardar el modelo"+Fore.RESET)
         print(e)
 
+
 def mostrar_resultados(gs, x_dev, y_dev):
     """
-    Muestra los resultados del clasificador.
-
-    Parámetros:
-    - gs: objeto GridSearchCV, el clasificador con la búsqueda de hiperparámetros.
-    - x_dev: array-like, las características del conjunto de desarrollo.
-    - y_dev: array-like, las etiquetas del conjunto de desarrollo.
-
-    Imprime en la consola los siguientes resultados:
-    - Mejores parámetros encontrados por la búsqueda de hiperparámetros.
-    - Mejor puntuación obtenida por el clasificador.
-    - F1-score micro del clasificador en el conjunto de desarrollo.
-    - F1-score macro del clasificador en el conjunto de desarrollo.
-    - Informe de clasificación del clasificador en el conjunto de desarrollo.
-    - Matriz de confusión del clasificador en el conjunto de desarrollo.
+    Muestra los resultados del clasificador y los exporta a un CSV.
     """
-
-
+    # Calculamos las métricas una sola vez para usarlas en el print y en el CSV
+    y_pred = gs.predict(x_dev)
+    f1_micro, f1_macro = calculate_fscore(y_dev, y_pred)
+    matriz_conf = calculate_confusion_matrix(y_dev, y_pred)
+    informe_class = calculate_classification_report(y_dev, y_pred)
 
     if args.verbose:
-        print(Fore.MAGENTA+"> Mejores parametros:\n"+Fore.RESET, gs.best_params_)
-        print(Fore.MAGENTA+"> Mejor puntuacion:\n"+Fore.RESET, gs.best_score_)
-        print(Fore.MAGENTA+"> F1-score micro:\n"+Fore.RESET, calculate_fscore(y_dev, gs.predict(x_dev))[0])
-        print(Fore.MAGENTA+"> F1-score macro:\n"+Fore.RESET, calculate_fscore(y_dev, gs.predict(x_dev))[1])
-        print(Fore.MAGENTA+"> Informe de clasificación:\n"+Fore.RESET, calculate_classification_report(y_dev, gs.predict(x_dev)))
-        print(Fore.MAGENTA+"> Matriz de confusión:\n"+Fore.RESET, calculate_confusion_matrix(y_dev, gs.predict(x_dev)))
+        print(Fore.MAGENTA + "> Mejores parametros:\n" + Fore.RESET, gs.best_params_)
+        print(Fore.MAGENTA + "> Mejor puntuacion:\n" + Fore.RESET, gs.best_score_)
+        print(Fore.MAGENTA + "> F1-score micro:\n" + Fore.RESET, f1_micro)
+        print(Fore.MAGENTA + "> F1-score macro:\n" + Fore.RESET, f1_macro)
+        print(Fore.MAGENTA + "> Informe de clasificación:\n" + Fore.RESET, informe_class)
+        print(Fore.MAGENTA + "> Matriz de confusión:\n" + Fore.RESET, matriz_conf)
+
+    # --- NUEVA SECCIÓN: EXPORTAR A CSV ---
+    try:
+        # Aplanamos la matriz de confusión a texto para que quepa en una sola celda del Excel/CSV
+        matriz_plana = str(matriz_conf.tolist())
+
+        datos_metricas = {
+            "Algoritmo": [args.algorithm],
+            "Mejor_Score": [gs.best_score_],
+            "F1_Micro": [f1_micro],
+            "F1_Macro": [f1_macro],
+            "Matriz_Confusion": [matriz_plana],
+            "Mejores_Parametros": [str(gs.best_params_)]
+        }
+
+        df_metricas = pd.DataFrame(datos_metricas)
+        ruta_csv = f'output/metricas_{args.algorithm}.csv'
+
+        # Mode='a' permite añadir filas si el archivo ya existe, ideal si pruebas varios algoritmos
+        if os.path.exists(ruta_csv):
+            df_metricas.to_csv(ruta_csv, mode='a', header=False, index=False)
+        else:
+            df_metricas.to_csv(ruta_csv, index=False)
+
+        print(Fore.GREEN + f"Mét    ricas exportadas con éxito en {ruta_csv}" + Fore.RESET)
+
+    except Exception as e:
+        print(Fore.RED + "Error al exportar las métricas al CSV" + Fore.RESET)
+        print(e)
 
 def calculate_classification_report(y_true, y_pred):
     """
@@ -784,6 +816,7 @@ if __name__ == "__main__":
     print("\n- Descargando diccionarios...")
     nltk.download('stopwords')
     nltk.download('punkt')
+    nltk.download('punkt_tab')
     nltk.download('wordnet')
     # Preprocesamos los datos
     print("\n- Preprocesando datos...")

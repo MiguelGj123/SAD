@@ -4,10 +4,10 @@
     "imputer_cat": "most_frequent",
     "unique_category_threshold":  10,
     "scaler":  "standard",
-    "text_process": "none",
+    "text_process": "tf-idf",
     "drop_features":  [],
     "sampling": "none",
-    "categorical_to_num": "ordinal"
+    "categorical_to_num": "onehot"
     },
   "decision_tree": {
     "criterion": ["gini", "entropy"],

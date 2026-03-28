@@ -61,6 +61,7 @@ def parse_args():
     parse.add_argument("-p", "--prediction", help="Columna a predecir (Nombre de la columna)", required=True)
     parse.add_argument("-v", "--verbose", help="Muestra un resumen de los resultados por la terminal", required=False, default=False, action="store_true")
     parse.add_argument("--debug", help="Modo debug [Muestra informacion extra del preprocesado y almacena el resultado del mismo en un .csv]", required=False, default=False, action="store_true")
+    parse.add_argument("-nh", "--no_header", help="Indica si el CSV no tiene cabecera para autogenerar C1, C2...", required=False, default=False, action="store_true")
     # Parseamos los argumentos
     args = parse.parse_args()
     
@@ -74,20 +75,25 @@ def parse_args():
     
     # Parseamos los argumentos
     return args
-    
+
+
 def load_data(file):
-    """
-    Función para cargar los datos de un fichero csv
-    :param file: Fichero csv
-    :return: Datos del fichero
-    """
+    global args
     try:
-        data = pd.read_csv(file, encoding='utf-8')
-        #Fore sirve para dar color
-        print(Fore.GREEN+"Datos cargados con éxito"+Fore.RESET)
+        if args.no_header:
+            # Si el usuario pone -nh, leemos sin cabecera y renombramos
+            data = pd.read_csv(file, encoding='utf-8', header=None)
+            data.columns = [f"C{i + 1}" for i in range(len(data.columns))]
+            print(Fore.CYAN + "Aviso: Se han autogenerado los nombres de las columnas (C1, C2...)" + Fore.RESET)
+        else:
+            # Comportamiento normal
+            data = pd.read_csv(file, encoding='utf-8')
+
+        print(Fore.GREEN + f"Datos cargados con éxito. Se han detectado {len(data.columns)} columnas." + Fore.RESET)
         return data
+
     except Exception as e:
-        print(Fore.RED+"Error al cargar los datos"+Fore.RESET)
+        print(Fore.RED + "Error al cargar los datos" + Fore.RESET)
         print(e)
         sys.exit(1)
 
@@ -281,9 +287,10 @@ def simplify_text(text_feature):
                 data[col] = data[col].str.translate(str.maketrans('', '', string.punctuation))
 
                 #Función interna para procesar cada celda de texto
+                # Función interna para procesar cada celda de texto
                 def clean_sentence(text):
-                    # Tokenizar (separar la frase en palabras sueltas)
-                    tokens = word_tokenize(text)
+                    # Tokenizar (forzando a que sea string por si llega un NaN/float vacío)
+                    tokens = word_tokenize(str(text))
                     # Quitar stopwords y aplicar stemming
                     clean_tokens = [stemmer.stem(word) for word in tokens if word not in stop_words]
                     # Volver a unir las palabras en una frase limpia
