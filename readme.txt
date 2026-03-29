@@ -1,8 +1,4 @@
-version python utilizada: Python 3.13
-
-#preparación de entorno
-
-Crear un nuevo proyecto (en por ejemplo pycharm), elegir Interpreter type: Base Conda, importar plantilla completa
+version python utilizada: Python 3.12
 
 # Instrucciones de Ejecución
 
