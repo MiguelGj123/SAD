@@ -88,7 +88,14 @@ def load_data(file):
     :return: Datos del fichero
     """
     try:
-        data = pd.read_csv(file, encoding='utf-8')
+        #abrir el archivo en modo lectura para ver que delimitador tiene
+        with open(file, 'r', encoding='utf-8') as f:
+            #se leen las primeras lineas para ver el delimitador
+            dialect = csv.Sniffer().sniff(f.read(1024))
+            f.seek(0)
+            #guardar en data las columnas del csv
+            data = pd.read_csv(f, sep=dialect.delimiter)
+
         #Fore sirve para dar color
         print(Fore.GREEN+"Datos cargados con éxito"+Fore.RESET)
         return data
