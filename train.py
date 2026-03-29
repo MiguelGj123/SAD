@@ -316,27 +316,39 @@ def process_text(text_feature):
     global data
     try:
         if text_feature.columns.size > 0:
-            if args.preprocessing["text_process"] == "tf-idf":               
-               tfidf_vectorizer = TfidfVectorizer()
+            if args.preprocessing["text_process"] == "tf-idf":
+               #con max_features limitamos la cantidad de palabras que se usan, para datasets muy grandes.
+               tfidf_vectorizer = TfidfVectorizer(max_features=1000)
                text_data = data[text_feature.columns].apply(lambda x: ' '.join(x.astype(str)), axis=1)
                tfidf_matrix = tfidf_vectorizer.fit_transform(text_data)
                text_features_df = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
+
+               # Guardar columnas procesadas
+               text_cols = text_features_df.columns.tolist()
+
                data = pd.concat([data, text_features_df], axis=1)
                data.drop(text_feature.columns, axis=1, inplace=True)
                print(Fore.GREEN+"Texto tratado con éxito usando TF-IDF"+Fore.RESET)
+               return text_cols,tfidf_vectorizer
 
             elif args.preprocessing["text_process"] == "bow":
-                bow_vecotirizer = CountVectorizer()
+                bow_vecotirizer = CountVectorizer(max_features=1000)
                 text_data = data[text_feature.columns].apply(lambda x: ' '.join(x.astype(str)), axis=1)
                 bow_matrix = bow_vecotirizer.fit_transform(text_data)
                 text_features_df = pd.DataFrame(bow_matrix.toarray(), columns=bow_vecotirizer.get_feature_names_out())
+
+                text_cols = text_features_df.columns.tolist()
+
                 data = pd.concat([data, text_features_df], axis=1)
+                data.drop(text_feature.columns, axis=1, inplace=True)
                 print(Fore.GREEN+"Texto tratado con éxito usando BOW"+Fore.RESET)
+                return text_cols, bow_vecotirizer
 
             else:
                 print(Fore.YELLOW+"No se están tratando los textos"+Fore.RESET)
         else:
             print(Fore.YELLOW+"No se han encontrado columnas de texto a procesar"+Fore.RESET)
+        return None, None
     except Exception as e:
         print(Fore.RED+"Error al tratar el texto"+Fore.RESET)
         print(e)
@@ -460,7 +472,7 @@ def preprocesar_datos():
     reescaler(numerical_feature)
     
     # Tratamos el texto
-    process_text(text_feature)
+    text_cols, vectorizer = process_text(text_feature)
 
     # devolvemos a data los valores del target, solo habiendo procesado missing values (evitar errores)
     data[args.prediction] = y
@@ -468,7 +480,7 @@ def preprocesar_datos():
     # Realizamos Oversampling o Undersampling
     over_under_sampling()
 
-    return data
+    return data, text_cols, vectorizer
 
 # Funciones para entrenar un modelo
 
@@ -511,7 +523,7 @@ def divide_data():
         sys.exit(1)
  
  
-def save_model(gs):
+def save_model(gs, vectorizer=None, text_columns=None):
     """
     Guarda el modelo y los resultados de la búsqueda de hiperparámetros en archivos.
 
@@ -530,24 +542,29 @@ def save_model(gs):
             params_str = json.dumps(best_params)  # convierte a string tipo JSON
             # Eliminamos caracteres que no son válidos en nombres de archivo
             nombre = re.sub(r'[^a-zA-Z0-9]', '_', params_str)
-            nombre = str(args.algorithm)+"_"+str(nombre)
+            nombre = "modelo_"+str(args.algorithm)+"_"+str(nombre)
 
-            with open(f'output/modelo_{nombre}.pkl', 'wb') as file:
-                pickle.dump(gs, file)
-                print(Fore.CYAN+"Modelo guardado con éxito"+Fore.RESET)
         elif args.model_name == 'n':
-            with open(f'output/modelo.pkl', 'wb') as file:
-                pickle.dump(gs, file)
-                print(Fore.CYAN+"Modelo guardado con éxito"+Fore.RESET)
+            nombre = "modelo"
         else:
             print(Fore.RED + "Opción 'model_name' mal utilizada" + Fore.RESET)
             raise Exception
+
+        modelo_completo = {
+            "gs": gs,
+            "vectorizer": vectorizer,
+            "text_columns": text_columns
+        }
+        with open(f'output/{nombre}.pkl', 'wb') as file:
+            pickle.dump(modelo_completo, file)
+            print(Fore.CYAN + "Modelo: "+ f"{nombre}" +" guardado con éxito" + Fore.RESET)
 
         with open('output/modelo.csv', 'w') as file:
             writer = csv.writer(file)
             writer.writerow(['Params', 'Score'])
             for params, score in zip(gs.cv_results_['params'], gs.cv_results_['mean_test_score']):
                 writer.writerow([params, score])
+
     except Exception as e:
         print(Fore.RED+"Error al guardar el modelo"+Fore.RESET)
         print(e)
@@ -604,7 +621,7 @@ def calculate_fscore(y_true, y_pred):
     f1_macro = f1_score(y_true, y_pred, average='macro')
     return f1_micro, f1_macro
 
-def kNN():
+def kNN(vectorizer=None, text_cols=None):
     """
     Función para implementar el algoritmo kNN.
     Hace un barrido de hiperparametros para encontrar los parametros optimos
@@ -637,9 +654,9 @@ def kNN():
     mostrar_resultados(gs, x_dev, y_dev)
     
     # Guardamos el modelo utilizando pickle
-    save_model(gs)
+    save_model(gs,vectorizer,text_cols)
 
-def decision_tree():
+def decision_tree(vectorizer=None, text_cols=None):
     """
     Función para implementar el algoritmo de árbol de decisión.
 
@@ -673,9 +690,9 @@ def decision_tree():
     mostrar_resultados(gs, x_dev, y_dev)
 
     # Guardamos el modelo ganador en el disco duro
-    save_model(gs)
+    save_model(gs, vectorizer, text_cols)
     
-def random_forest():
+def random_forest(vectorizer=None, text_cols=None):
     """
     Función que entrena un modelo de Random Forest utilizando GridSearchCV para encontrar los mejores hiperparámetros.
     Divide los datos en entrenamiento y desarrollo, realiza la búsqueda de hiperparámetros, guarda el modelo entrenado
@@ -718,10 +735,10 @@ def random_forest():
     print("Tiempo de ejecución: " + Fore.MAGENTA + str(execution_time) + Fore.RESET + " segundos")
 
     # Guardamos el modelo utilizando pickle
-    save_model(gs)
+    save_model(gs, vectorizer, text_cols)
 
 
-def naive_bayes():
+def naive_bayes(vectorizer=None, text_cols=None):
     """
     Función para implementar el algoritmo Naive Bayes.
     """
@@ -753,7 +770,7 @@ def naive_bayes():
     mostrar_resultados(gs, x_dev, y_dev)
 
     # 4. Guardamos el modelo
-    save_model(gs)
+    save_model(gs, vectorizer, text_cols)
 
 
 # Función principal
@@ -788,7 +805,7 @@ if __name__ == "__main__":
     nltk.download('wordnet')
     # Preprocesamos los datos
     print("\n- Preprocesando datos...")
-    preprocesar_datos()
+    datos, text_cols, vectorizer = preprocesar_datos()
     if args.debug:
         try:
             print("\n- Guardando datos preprocesados...")
@@ -801,28 +818,28 @@ if __name__ == "__main__":
     print("\n- Ejecutando algoritmo...")
     if args.algorithm == "kNN":
         try:
-            kNN()
+            kNN(vectorizer)
             print(Fore.GREEN+"Algoritmo kNN ejecutado con éxito"+Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
     elif args.algorithm == "decision_tree":
         try:
-            decision_tree()
+            decision_tree(vectorizer, text_cols)
             print(Fore.GREEN+"Algoritmo árbol de decisión ejecutado con éxito"+Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
     elif args.algorithm == "random_forest":
         try:
-            random_forest()
+            random_forest(vectorizer, text_cols)
             print(Fore.GREEN+"Algoritmo random forest ejecutado con éxito"+Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
     elif args.algorithm == "naive_bayes":
         try:
-            naive_bayes()
+            naive_bayes(vectorizer, text_cols)
             print(Fore.GREEN + "Algoritmo Naive Bayes ejecutado con éxito" + Fore.RESET)
             sys.exit(0)
         except Exception as e:

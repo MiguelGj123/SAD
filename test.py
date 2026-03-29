@@ -299,38 +299,45 @@ def simplify_text(text_feature):
         print(e)
         sys.exit(1)
 
-def process_text(text_feature):
+def process_text(text_feature, vectorizer, text_columns):
     """
-    Procesa las características de texto utilizando técnicas de vectorización como TF-IDF o BOW.
+    Procesa las columnas de texto del test usando el vectorizer ya entrenado.
 
     Parámetros:
-    text_feature (pandas.DataFrame): Un DataFrame que contiene las características de texto a procesar.
+    - text_feature (DataFrame): columnas de texto del test
+    - vectorizer: TF-IDF o CountVectorizer entrenado
+    - text_columns: lista de columnas de texto usadas en train
 
+    Retorna:
+    - data_test con las columnas vectorizadas
     """
     global data
     try:
         if text_feature.columns.size > 0:
-            if args.preprocessing["text_process"] == "tf-idf":               
-               tfidf_vectorizer = TfidfVectorizer()
-               text_data = data[text_feature.columns].apply(lambda x: ' '.join(x.astype(str)), axis=1)
-               tfidf_matrix = tfidf_vectorizer.fit_transform(text_data)
-               text_features_df = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
-               data = pd.concat([data, text_features_df], axis=1)
-               data.drop(text_feature.columns, axis=1, inplace=True)
-               print(Fore.GREEN+"Texto tratado con éxito usando TF-IDF"+Fore.RESET)
+            if args.preprocessing["text_process"] != "none":
+                # combinamos el texto de las columnas
+                text_data = text_feature[text_feature.columns].apply(lambda x: ' '.join(x.astype(str)), axis=1)
 
-            elif args.preprocessing["text_process"] == "bow":
-                bow_vecotirizer = CountVectorizer()
-                text_data = data[text_feature.columns].apply(lambda x: ' '.join(x.astype(str)), axis=1)
-                bow_matrix = bow_vecotirizer.fit_transform(text_data)
-                text_features_df = pd.DataFrame(bow_matrix.toarray(), columns=bow_vecotirizer.get_feature_names_out())
-                data = pd.concat([data, text_features_df], axis=1)
-                print(Fore.GREEN+"Texto tratado con éxito usando BOW"+Fore.RESET)
+                # transformamos usando el vectorizer ya entrenado
+                matrix = vectorizer.transform(text_data)
+
+                # convertimos a DataFrame con mismas columnas que el train
+                text_features_df = pd.DataFrame(matrix.toarray(), columns=text_columns)
+
+                # agregamos al DataFrame
+                #data_test = pd.concat([text_feature, datos_text], axis=1)
+
+                # eliminar las columnas originales de texto
+                #data_test.drop(text_columns, axis=1, inplace=True)
+
+                return text_features_df
 
             else:
                 print(Fore.YELLOW+"No se están tratando los textos"+Fore.RESET)
         else:
             print(Fore.YELLOW+"No se han encontrado columnas de texto a procesar"+Fore.RESET)
+        return None
+
     except Exception as e:
         print(Fore.RED+"Error al tratar el texto"+Fore.RESET)
         print(e)
@@ -358,7 +365,7 @@ def drop_features():
         print(e)
         sys.exit(1)
 
-def preprocesar_datos():
+def preprocesar_datos(vectorizer=None, text_columns=None):
     """
     Función para preprocesar los datos
         1. Borramos target si existe (generalmente no habrá porque es dataset a predecir).
@@ -407,7 +414,11 @@ def preprocesar_datos():
     reescaler(numerical_feature)
     
     # Tratamos el texto
-    process_text(text_feature)
+    datos_text = process_text(text_feature, vectorizer, text_columns)
+    #Si hay texto que ha sido tratado
+    if datos_text is not None:
+        # agregamos al DataFrame
+        data = pd.concat([numerical_feature, categorical_feature, datos_text], axis=1)
 
     # devolvemos a data los valores del target, si existe, temporalmente
     if y is not None:
@@ -429,9 +440,12 @@ def load_model(model):
     """
     try:
         with open(model, 'rb') as file:
-            modelo = pickle.load(file)
+            saved = pickle.load(file)
+            modelo = saved["gs"]
+            vectorizer = saved["vectorizer"]
+            text_columns = saved["text_columns"]
             print(Fore.GREEN+"Modelo cargado con éxito"+Fore.RESET)
-            return modelo
+            return modelo, vectorizer, text_columns
     except Exception as e:
         print(Fore.RED+"Error al cargar el modelo"+Fore.RESET)
         print(e)
@@ -509,10 +523,16 @@ if __name__ == "__main__":
     print("\n- Descargando diccionarios...")
     nltk.download('stopwords')
     nltk.download('punkt')
+    nltk.download('punkt_tab')
     nltk.download('wordnet')
     # Preprocesamos los datos
     print("\n- Preprocesando datos...")
-    preprocesar_datos()
+
+    # Cargamos el modelo
+    print("\n- Cargando modelo...")
+    model, vectorizer, text_columns = load_model(args.model)
+
+    preprocesar_datos(vectorizer, text_columns)
 
     # Nos quedamos solo con features, y guardamos el target por si acaso se incluye, para comparar predicciones
     # (NO SE USA EL TARGET EN LA PREDICCIÓN)
@@ -530,9 +550,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(Fore.RED+"Error al guardar los datos preprocesados"+Fore.RESET)
 
-    # Cargamos el modelo
-    print("\n- Cargando modelo...")
-    model = load_model(args.model)
     # Predecimos
     print("\n- Prediciendo...")
 
