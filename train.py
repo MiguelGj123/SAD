@@ -24,6 +24,10 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import f1_score, confusion_matrix, classification_report
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 # NLTK e Imblearn: Texto y balanceo de clases
 import nltk
@@ -47,10 +51,11 @@ def parse_args():
     parse = argparse.ArgumentParser(description="Entrenamiento de modelos.")
     parse.add_argument("-f", "--file", required=True, help="Archivo de datos")
     parse.add_argument("-j", "--json", required=True, help="Configuración JSON")
-    parse.add_argument("-a", "--algorithm", required=True, help="Algoritmo a usar")
-    parse.add_argument("-p", "--prediction", required=True, help="Columna target (Ej: C5)")
+    parse.add_argument("-a", "--algorithm", required=True, help="Algoritmo a usar. Poner: decision_tree, kNN, random_forest, naive_bayes" )
+    parse.add_argument("-p", "--prediction", required=True, help="Columna target (Ej: C5) (Empieza en C1")
     parse.add_argument("-v", "--verbose", action="store_true")
     parse.add_argument("-nh", "--no_header", action="store_true")
+    parse.add_argument("-t", "--task", choices=['C', 'R'], required=True ,help="Tipo de tarea. C = clasificacion ; R = regresion")
     parse.add_argument("-c", "--cpu", default=-1, type=int)  # -1 usa todos los hilos del procesador
     parse.add_argument("-e", "--estimator", default=None)
 
@@ -237,7 +242,12 @@ def mostrar_y_guardar(gs, x_dev, y_dev):
     y_pred = gs.predict(x_dev)
     if args.verbose:
         print(Fore.MAGENTA + "Mejores Parámetros:" + Fore.RESET, gs.best_params_)
-        print(classification_report(y_dev, y_pred))
+        if args.task == 'R':
+            print(Fore.CYAN + "R2 Score (Precisión):" + Fore.RESET, r2_score(y_dev, y_pred))
+            print(Fore.CYAN + "Error Cuadrático Medio (MSE):" + Fore.RESET, mean_squared_error(y_dev, y_pred))
+            print(Fore.CYAN + "Error Absoluto Medio (MAE):" + Fore.RESET, mean_absolute_error(y_dev, y_pred))
+        else:
+            print(classification_report(y_dev, y_pred))
 
     res = x_dev.copy()
     res['Real'] = y_dev
@@ -249,19 +259,20 @@ def mostrar_y_guardar(gs, x_dev, y_dev):
 
 
 def ejecutar_grid(model, params, name):
-    # El corazón del entrenamiento.
-    # VARIAR:
-    # 1. 'test_size=0.2' define el reparto 80/20. Cámbialo a 0.1 para un 90/10.
-    # 2. 'cv=5' define cuántas carpetas usa GridSearchCV. Súbelo a 10 para más precisión (pero más lento).
     X = data.drop(columns=[args.prediction])
     y = data[args.prediction]
 
-    # Aquí es donde cambias el reparto de entrenamiento/test
-    x_train, x_dev, y_train, y_dev = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    # MAGIA: Estratificamos SOLO si es clasificación
+    estratificar = y if args.task == 'C' else None
+    x_train, x_dev, y_train, y_dev = train_test_split(X, y, test_size=0.2, random_state=42, stratify=estratificar)
 
     with tqdm(total=100, desc=f'Procesando {name}', unit='iter', leave=True) as pbar:
-        # Aquí es donde cambias el Cross-Validation (cv)
-        gs = GridSearchCV(model, params, cv=5, n_jobs=args.cpu, scoring=args.estimator)
+        # MAGIA 2: Cambiamos cómo se evalúa el GridSearchCV según la tarea
+        scoring_metric = args.estimator
+        if scoring_metric is None:
+            scoring_metric = 'neg_mean_squared_error' if args.task == 'R' else 'f1_macro'
+
+        gs = GridSearchCV(model, params, cv=5, n_jobs=args.cpu, scoring=scoring_metric)
 
         start_time = time.time()
         gs.fit(x_train, y_train)
@@ -286,16 +297,26 @@ if __name__ == "__main__":
     print("- Preprocesando...")
     preprocesar()
 
-    # Mapeo de algoritmos con sus parámetros del JSON
-    algos = {
-        "kNN": (KNeighborsClassifier(), args.kNN),
-        "decision_tree": (DecisionTreeClassifier(random_state=42), args.decision_tree),
-        "random_forest": (RandomForestClassifier(random_state=42), args.random_forest),
-        "naive_bayes": (GaussianNB(), args.naive_bayes)
-    }
+    if args.task == 'R':
+        algos = {
+            "kNN": (KNeighborsRegressor(), args.kNN),
+            "decision_tree": (DecisionTreeRegressor(random_state=42), args.decision_tree),
+            "random_forest": (RandomForestRegressor(random_state=42), args.random_forest),
+            "naive_bayes": (None, None)  # Naive Bayes no tiene regresor estándar aquí
+        }
+    else:
+        algos = {
+            "kNN": (KNeighborsClassifier(), args.kNN),
+            "decision_tree": (DecisionTreeClassifier(random_state=42), args.decision_tree),
+            "random_forest": (RandomForestClassifier(random_state=42), args.random_forest),
+            "naive_bayes": (GaussianNB(), args.naive_bayes)
+        }
 
     if args.algorithm in algos:
         model, params = algos[args.algorithm]
-        ejecutar_grid(model, params, args.algorithm)
+        if model is None:
+            print(Fore.RED + f"Error: El algoritmo {args.algorithm} no soporta el modo {args.task}." + Fore.RESET)
+        else:
+            ejecutar_grid(model, params, args.algorithm)
     else:
         print(Fore.RED + "Algoritmo no reconocido." + Fore.RESET)

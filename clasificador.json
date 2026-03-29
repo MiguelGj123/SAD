@@ -1,5 +1,5 @@
 {
-  "_nota_preprocesado": "Cambia 'categorical_to_num' a 'ordinal' si vas a usar Árboles/RandomForest. Déjalo en 'onehot' para kNN/NaiveBayes.",
+  "_nota_preprocesado": "Cambia 'categorical_to_num' a 'ordinal' si vas a usar Arboles/RandomForest. Dejalo en 'onehot' para kNN/NaiveBayes.",
   "preprocessing" : {
     "imputer_num": "mean",
     "imputer_cat": "most_frequent",
@@ -8,7 +8,7 @@
     "text_process": "tf-idf",
     "drop_features":  [],
     "sampling": "none",
-    "categorical_to_num": "ordinal"
+    "categorical_to_num": "onehot"
     },
   "decision_tree": {
     "criterion": ["gini", "entropy"],
