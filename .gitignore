@@ -3,3 +3,5 @@
 output/
 irisTest.csv
 SantanderTest.csv
+test.csv
+train.csv

@@ -13,7 +13,7 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
 from nltk.tokenize import word_tokenize
-from sklearn.metrics import f1_score, confusion_matrix, classification_report
+from sklearn.metrics import f1_score, classification_report, mean_squared_error, mean_absolute_error, r2_score, confusion_matrix
 from sklearn.impute import SimpleImputer
 
 
@@ -24,13 +24,14 @@ def signal_handler(sig, frame):
 def parse_args():
     # VARIAR: Aquí se gestionan los argumentos.
     # Asegúrate de pasar siempre el -m (modelo) y el -j (json) correctos.
-    parse = argparse.ArgumentParser(description="Fase de testeo.")
-    parse.add_argument("-f", "--file", required=True)
+    parse = argparse.ArgumentParser(description="Entrenamiento de modelos.")
+    parse.add_argument("-f", "--file", required=True, help="Archivo de datos")
+    parse.add_argument("-j", "--json", required=True, help="Configuración JSON")
     parse.add_argument("-m", "--model", required=True)
-    parse.add_argument("-j", "--json", required=True)
-    parse.add_argument("-p", "--prediction", required=True)
+    parse.add_argument("-p", "--prediction", required=True, help="Columna target (Ej: C5) (Empieza en C1")
     parse.add_argument("-v", "--verbose", action="store_true")
     parse.add_argument("-nh", "--no_header", action="store_true")
+    parse.add_argument("-t", "--task", choices=['C', 'R'], required=True, help="Tipo de tarea. C = clasificacion ; R = regresion")
     args = parse.parse_args()
 
     with open(args.json) as f:
@@ -182,32 +183,37 @@ def preprocesar():
 
 
 def predict(y_true):
-    # PREDICCIÓN FINAL: Carga el modelo y genera resultados.
     global data
-    # SEGURO DE VIDA: Borramos cualquier columna que no sea número para que no pete el float.
     data = data.select_dtypes(include=[np.number])
 
     with open(args.model, 'rb') as f:
         model = pickle.load(f)
 
-    # ALINEACIÓN DE COLUMNAS: Si al Test le falta alguna columna que el modelo espera, la crea con ceros.
     if hasattr(model, "feature_names_in_"):
         missing = set(model.feature_names_in_) - set(data.columns)
         if missing:
             print(Fore.YELLOW + f"Aviso: Columnas faltantes {missing} rellenadas con 0" + Fore.RESET)
             for m in missing: data[m] = 0
-        data = data[model.feature_names_in_]  # Reordenamos para que coincidan perfectamente
+        data = data[model.feature_names_in_]
 
     pred = model.predict(data)
 
-    print(Fore.MAGENTA + "Distribución de Predicciones:\n" + Fore.RESET, pd.Series(pred).value_counts())
+    # Mostrar la distribución o un ejemplo según la tarea
+    if args.task == 'C':
+        print(Fore.MAGENTA + "Distribución de Predicciones:\n" + Fore.RESET, pd.Series(pred).value_counts())
+    else:
+        print(Fore.MAGENTA + "Ejemplo de Predicciones (Regresión):\n" + Fore.RESET, pred[:5])
 
-    # MÉTRICAS: Solo se muestran si el verbose está activo y el archivo de test tenía la columna Real.
+    # MÉTRICAS: Solo si el verbose está activo y tenemos la solución (y_true)
     if args.verbose and y_true is not None:
-        print(Fore.CYAN + "F1 Macro:" + Fore.RESET, f1_score(y_true, pred, average='macro'))
-        print(classification_report(y_true, pred))
+        if args.task == 'R':
+            print(Fore.CYAN + "R2 Score (Precisión):" + Fore.RESET, r2_score(y_true, pred))
+            print(Fore.CYAN + "Error Cuadrático Medio (MSE):" + Fore.RESET, mean_squared_error(y_true, pred))
+            print(Fore.CYAN + "Error Absoluto Medio (MAE):" + Fore.RESET, mean_absolute_error(y_true, pred))
+        else:
+            print(Fore.CYAN + "F1 Macro:" + Fore.RESET, f1_score(y_true, pred, average='macro'))
+            print(classification_report(y_true, pred))
 
-    # GUARDADO: Generamos el CSV final con la predicción.
     if y_true is not None: data['Target_Real'] = y_true.values
     data['Prediccion'] = pred
     data.to_csv('output/data-prediction.csv', index=False)
