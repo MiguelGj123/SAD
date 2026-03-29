@@ -240,20 +240,44 @@ def preprocesar():
 def mostrar_y_guardar(gs, x_dev, y_dev):
     # Evalúa el modelo en el conjunto de validación y guarda el .pkl final.
     y_pred = gs.predict(x_dev)
+
     if args.verbose:
         print(Fore.MAGENTA + "Mejores Parámetros:" + Fore.RESET, gs.best_params_)
+
         if args.task == 'R':
-            print(Fore.CYAN + "R2 Score (Precisión):" + Fore.RESET, r2_score(y_dev, y_pred))
-            print(Fore.CYAN + "Error Cuadrático Medio (MSE):" + Fore.RESET, mean_squared_error(y_dev, y_pred))
-            print(Fore.CYAN + "Error Absoluto Medio (MAE):" + Fore.RESET, mean_absolute_error(y_dev, y_pred))
+            r2 = r2_score(y_dev, y_pred)
+            mse = mean_squared_error(y_dev, y_pred)
+            mae = mean_absolute_error(y_dev, y_pred)
+
+            print(Fore.CYAN + "R2 Score (Precisión):" + Fore.RESET, r2)
+            print(Fore.CYAN + "Error Cuadrático Medio (MSE):" + Fore.RESET, mse)
+            print(Fore.CYAN + "Error Absoluto Medio (MAE):" + Fore.RESET, mae)
+
+            # GUARDAR MÉTRICAS DE REGRESIÓN EN CSV
+            df_metricas = pd.DataFrame([{'R2_Score': r2, 'MSE': mse, 'MAE': mae}])
+            df_metricas.to_csv('output/metricas_train_regresion.csv', index=False)
+
         else:
             print(classification_report(y_dev, y_pred))
 
+            # GUARDAR MÉTRICAS Y MATRIZ DE CONFUSIÓN EN CSV
+            # 1. Guardar el reporte (Precision, Recall, F1)
+            reporte_dict = classification_report(y_dev, y_pred, output_dict=True)
+            df_reporte = pd.DataFrame(reporte_dict).transpose()
+            df_reporte.to_csv('output/metricas_train_clasificacion.csv')
+
+            # 2. Guardar la Matriz de Confusión
+            matriz = confusion_matrix(y_dev, y_pred)
+            df_matriz = pd.DataFrame(matriz)
+            df_matriz.to_csv('output/matriz_confusion_train.csv', index=False)
+
+    # Guarda las predicciones fila por fila
     res = x_dev.copy()
     res['Real'] = y_dev
     res['Pred'] = y_pred
     res.to_csv(f'output/val_pred_{args.algorithm}.csv', index=False)
 
+    # Guarda el cerebro del modelo
     with open('output/modelo.pkl', 'wb') as f:
         pickle.dump(gs.best_estimator_, f)
 
@@ -262,12 +286,12 @@ def ejecutar_grid(model, params, name):
     X = data.drop(columns=[args.prediction])
     y = data[args.prediction]
 
-    # MAGIA: Estratificamos SOLO si es clasificación
+    # Estratificamos SOLO si es clasificación
     estratificar = y if args.task == 'C' else None
     x_train, x_dev, y_train, y_dev = train_test_split(X, y, test_size=0.2, random_state=42, stratify=estratificar)
 
     with tqdm(total=100, desc=f'Procesando {name}', unit='iter', leave=True) as pbar:
-        # MAGIA 2: Cambiamos cómo se evalúa el GridSearchCV según la tarea
+        #  Cambiamos cómo se evalúa el GridSearchCV según la tarea
         scoring_metric = args.estimator
         if scoring_metric is None:
             scoring_metric = 'neg_mean_squared_error' if args.task == 'R' else 'f1_macro'

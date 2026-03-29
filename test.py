@@ -204,15 +204,38 @@ def predict(y_true):
     else:
         print(Fore.MAGENTA + "Ejemplo de Predicciones (Regresión):\n" + Fore.RESET, pred[:5])
 
-    # MÉTRICAS: Solo si el verbose está activo y tenemos la solución (y_true)
-    if args.verbose and y_true is not None:
-        if args.task == 'R':
-            print(Fore.CYAN + "R2 Score (Precisión):" + Fore.RESET, r2_score(y_true, pred))
-            print(Fore.CYAN + "Error Cuadrático Medio (MSE):" + Fore.RESET, mean_squared_error(y_true, pred))
-            print(Fore.CYAN + "Error Absoluto Medio (MAE):" + Fore.RESET, mean_absolute_error(y_true, pred))
-        else:
-            print(Fore.CYAN + "F1 Macro:" + Fore.RESET, f1_score(y_true, pred, average='macro'))
-            print(classification_report(y_true, pred))
+        # MÉTRICAS: Solo si el verbose está activo y tenemos la solución (y_true)
+        if args.verbose and y_true is not None:
+            if args.task == 'R':
+                r2 = r2_score(y_true, pred)
+                mse = mean_squared_error(y_true, pred)
+                mae = mean_absolute_error(y_true, pred)
+
+                print(Fore.CYAN + "R2 Score (Precisión):" + Fore.RESET, r2)
+                print(Fore.CYAN + "Error Cuadrático Medio (MSE):" + Fore.RESET, mse)
+                print(Fore.CYAN + "Error Absoluto Medio (MAE):" + Fore.RESET, mae)
+
+                #  GUARDAR MÉTRICAS DE REGRESIÓN EN CSV
+                df_metricas = pd.DataFrame([{'R2_Score': r2, 'MSE': mse, 'MAE': mae}])
+                df_metricas.to_csv('output/metricas_test_regresion.csv', index=False)
+
+            else:
+                print(Fore.CYAN + "F1 Macro:" + Fore.RESET, f1_score(y_true, pred, average='macro'))
+                print(classification_report(y_true, pred))
+
+                #GUARDAR MÉTRICAS Y MATRIZ DE CONFUSIÓN EN CSV
+                reporte_dict = classification_report(y_true, pred, output_dict=True)
+                df_reporte = pd.DataFrame(reporte_dict).transpose()
+                df_reporte.to_csv('output/metricas_test_clasificacion.csv')
+
+                matriz = confusion_matrix(y_true, pred)
+                df_matriz = pd.DataFrame(matriz)
+                df_matriz.to_csv('output/matriz_confusion_test.csv', index=False)
+
+        # GUARDADO DE LAS PREDICCIONES
+        if y_true is not None: data['Target_Real'] = y_true.values
+        data['Prediccion'] = pred
+        data.to_csv('output/data-prediction.csv', index=False)
 
     if y_true is not None: data['Target_Real'] = y_true.values
     data['Prediccion'] = pred
