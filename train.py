@@ -60,9 +60,10 @@ def parse_args():
     parse = argparse.ArgumentParser(description="Practica de algoritmos de clasificación de datos.")
     parse.add_argument("-f", "--file", help="Fichero de datos .csv (/Path_to_file)", required=True)
     parse.add_argument("-j", "--json", help="Fichero de configuración .json (/Path_to_file)", required=True)
-    parse.add_argument("-a", "--algorithm", help="Algoritmo a ejecutar (kNN, decision_tree o random_forest)", required=True)
+    parse.add_argument("-a", "--algorithm", help="Algoritmo a ejecutar (kNN, decision_tree, random_forest o naive_bayes)", required=True)
     parse.add_argument("-p", "--prediction", help="Columna a predecir (Nombre de la columna)", required=True)
-    parse.add_argument("-mn", "--model_name", help="'y' para que se escriban los hiperparámetros en el nombre del mejor modelo, 'n' para que no.", required=False, default='n')
+    parse.add_argument("-s", "--separador", help='Si se usa, separa el archivo csv con el argumento que se le pase (";" o ",")', required=False, default=',')
+    parse.add_argument("-st", "--sentiment", help='Si se usa, se asume que la columna de predicción es una puntuación del 1 al 5, y la transforma a "neutral","positivo" y "negativo"', required=False, action="store_true")
     parse.add_argument("-e", "--estimator", help="Estimador a utilizar para elegir el mejor modelo https://scikit-learn.org/stable/modules/model_evaluation.html#scoring-parameter", required=False, default=None)
     parse.add_argument("-c", "--cpu", help="Número de CPUs a utilizar [-1 para usar todos]", required=False, default=-1, type=int)
     parse.add_argument("-v", "--verbose", help="Muestra las metricas por la terminal", required=False, default=False, action="store_true")
@@ -80,7 +81,16 @@ def parse_args():
     
     # Parseamos los argumentos
     return args
-    
+
+def map_sentiment(score):
+    putnuacion = int(score)
+    if putnuacion == 3:
+        return "neutral"
+    elif putnuacion > 3:
+        return "positive"
+    elif putnuacion < 3:
+        return "negative"
+
 def load_data(file):
     """
     Función para cargar los datos de un fichero csv
@@ -88,13 +98,19 @@ def load_data(file):
     :return: Datos del fichero
     """
     try:
-        #abrir el archivo en modo lectura para ver que delimitador tiene
-        with open(file, 'r', encoding='utf-8') as f:
-            #se leen las primeras lineas para ver el delimitador
-            dialect = csv.Sniffer().sniff(f.read(1024))
-            f.seek(0)
-            #guardar en data las columnas del csv
-            data = pd.read_csv(f, sep=dialect.delimiter)
+        # Obtener el separador.
+        separador = args.separador
+
+        if separador == ";":
+            data = pd.read_csv(file, sep=";", encoding='utf-8')
+        elif separador == ",":
+            data = pd.read_csv(file, encoding='utf-8')
+        else:
+            print("No se reconoce el separador especificado en --separador")
+            exit(1)
+
+        #Eliminar columnas erroneas
+        data = data.loc[:, ~data.columns.str.contains("^Unnamed")]
 
         #Fore sirve para dar color
         print(Fore.GREEN+"Datos cargados con éxito"+Fore.RESET)
@@ -248,6 +264,9 @@ def cat2num(categorical_feature):
 
                 encoder = OrdinalEncoder()
                 data[categorical_feature.columns] = encoder.fit_transform(data[categorical_feature.columns])
+
+                print(Fore.GREEN + "Variables categóricas convertidas a numéricas con éxito" + Fore.RESET)
+                return encoder
             elif estrategia == "onehot":
                 # --- ESTRATEGIA 2: One-Hot Encoding (Variables Dummy) ---
                 # Crea una columna nueva por cada categoría con 0s y 1s.
@@ -255,14 +274,15 @@ def cat2num(categorical_feature):
                 # CONTRAS: Si tienes una categoría con 100 valores distintos, te creará 100 columnas nuevas, haciendo el dataset enorme.
 
                 data = pd.get_dummies(data, columns=categorical_feature.columns, drop_first=True)
+                cat2num_cols = data.columns.tolist()
+                print(Fore.GREEN + "Variables categóricas convertidas a numéricas con éxito" + Fore.RESET)
+                return cat2num_cols
             elif estrategia == "none":
                 print(Fore.YELLOW + f"No se transforman datos categóricos a numéricos" + Fore.RESET)
-                return
+                return None
             else:
                 print(Fore.YELLOW + f"Estrategia de transformación de datos categóricos a numéticos: '{estrategia},' no reconocida" + Fore.RESET)
-                return
-
-            print(Fore.GREEN + "Variables categóricas convertidas a numéricas con éxito" + Fore.RESET)
+                return None
 
     except Exception as e:
         print("Error en la transformacion")
@@ -283,7 +303,7 @@ def simplify_text(text_feature):
     try:
         if len(text_feature.columns) > 0:
             #preparamos las herramientas q usaremos luego
-            stop_words = set(stopwords.words('spanish'))  # Cambia a 'english' u otros idiomas
+            stop_words = set(stopwords.words('english'))  # Cambia a 'english' u otros idiomas
             stemmer = PorterStemmer()
 
             for col in text_feature.columns:
@@ -450,12 +470,20 @@ def preprocesar_datos():
 
     global data
 
+    # Si sentiment analysis, forzar el score a numérico, y convertir en null lo que no lo sea
+    # Evitar fallos de comas en el texto.
+    # Traducir score a "positivo", "negativo", "neutro" si se trata con sentiment analysis
+    if args.sentiment:
+        data[args.prediction] = pd.to_numeric(data[args.prediction], errors="coerce")
+        data[args.prediction] = data[args.prediction].fillna(data[args.prediction].mode()[0])  # para clasificación
+        data[args.prediction] = data[args.prediction].apply(map_sentiment)
+
     # Guardamos la target
     y = data[args.prediction]
 
     # Tratamos missing values de la target (si hace falta)
-    if y.isnull().any():
-        y = y.fillna(y.mode()[0])  # para clasificación
+    if y.isnull().any() and not args.sentiment:
+      y = y.fillna(y.mode()[0])  # para clasificación
 
     # Nos quedamos solo con features
     data = data.drop(columns=[args.prediction])
@@ -470,7 +498,7 @@ def preprocesar_datos():
     process_missing_values(numerical_feature, categorical_feature)
 
     # Pasar los datos a categoriales a numéricos
-    cat2num(categorical_feature)
+    cat2num_cols = cat2num(categorical_feature)
 
     # Simplificamos el texto
     simplify_text(text_feature)
@@ -487,7 +515,7 @@ def preprocesar_datos():
     # Realizamos Oversampling o Undersampling
     over_under_sampling()
 
-    return data, text_cols, vectorizer
+    return data, text_cols, cat2num_cols, vectorizer
 
 # Funciones para entrenar un modelo
 
@@ -530,7 +558,7 @@ def divide_data():
         sys.exit(1)
  
  
-def save_model(gs, vectorizer=None, text_columns=None):
+def save_model(gs, vectorizer=None, text_columns=None, cat2num_cols=None):
     """
     Guarda el modelo y los resultados de la búsqueda de hiperparámetros en archivos.
 
@@ -542,25 +570,13 @@ def save_model(gs, vectorizer=None, text_columns=None):
 
     """
     try:
-
-        if args.model_name == 'y':
-            # Convertimos los hiperparámetros a un string seguro para nombre de archivo
-            best_params = gs.best_params_
-            params_str = json.dumps(best_params)  # convierte a string tipo JSON
-            # Eliminamos caracteres que no son válidos en nombres de archivo
-            nombre = re.sub(r'[^a-zA-Z0-9]', '_', params_str)
-            nombre = "modelo_"+str(args.algorithm)+"_"+str(nombre)
-
-        elif args.model_name == 'n':
-            nombre = "modelo"
-        else:
-            print(Fore.RED + "Opción 'model_name' mal utilizada" + Fore.RESET)
-            raise Exception
+        nombre = "modelo"
 
         modelo_completo = {
             "gs": gs,
             "vectorizer": vectorizer,
-            "text_columns": text_columns
+            "text_columns": text_columns,
+            "cat2num_cols": cat2num_cols
         }
         with open(f'output/{nombre}.pkl', 'wb') as file:
             pickle.dump(modelo_completo, file)
@@ -608,13 +624,22 @@ def calculate_classification_report(y_true, y_pred):
     """
     Genera un informe de texto con Precision, Recall y F1 para cada clase.
     """
-    return classification_report(y_true, y_pred, zero_division=0)
+    #Hacer el clasification report
+    cr = classification_report(y_true, y_pred, zero_division=0)
+    with open('output/classification_report_train.txt', 'w') as f:
+        f.write(cr)
+
+    return cr
 
 def calculate_confusion_matrix(y_true, y_pred):
     """
     Genera la matriz de confusión para ver dónde se equivoca el modelo.
     """
-    return confusion_matrix(y_true, y_pred)
+    cm = confusion_matrix(y_true, y_pred)
+    df_cm = pd.DataFrame(cm)
+    df_cm.to_csv('output/matriz_confusion_train.csv', index=False)
+
+    return cm
 
 def calculate_fscore(y_true, y_pred):
     """
@@ -628,7 +653,7 @@ def calculate_fscore(y_true, y_pred):
     f1_macro = f1_score(y_true, y_pred, average='macro')
     return f1_micro, f1_macro
 
-def kNN(vectorizer=None, text_cols=None):
+def kNN(vectorizer=None, text_cols=None, cat2num_cols=None):
     """
     Función para implementar el algoritmo kNN.
     Hace un barrido de hiperparametros para encontrar los parametros optimos
@@ -661,9 +686,9 @@ def kNN(vectorizer=None, text_cols=None):
     mostrar_resultados(gs, x_dev, y_dev)
     
     # Guardamos el modelo utilizando pickle
-    save_model(gs,vectorizer,text_cols)
+    save_model(gs,vectorizer,text_cols, cat2num_cols)
 
-def decision_tree(vectorizer=None, text_cols=None):
+def decision_tree(vectorizer=None, text_cols=None, cat2num_cols=None):
     """
     Función para implementar el algoritmo de árbol de decisión.
 
@@ -697,9 +722,9 @@ def decision_tree(vectorizer=None, text_cols=None):
     mostrar_resultados(gs, x_dev, y_dev)
 
     # Guardamos el modelo ganador en el disco duro
-    save_model(gs, vectorizer, text_cols)
+    save_model(gs, vectorizer, text_cols, cat2num_cols)
     
-def random_forest(vectorizer=None, text_cols=None):
+def random_forest(vectorizer=None, text_cols=None, cat2num_cols=None):
     """
     Función que entrena un modelo de Random Forest utilizando GridSearchCV para encontrar los mejores hiperparámetros.
     Divide los datos en entrenamiento y desarrollo, realiza la búsqueda de hiperparámetros, guarda el modelo entrenado
@@ -742,10 +767,10 @@ def random_forest(vectorizer=None, text_cols=None):
     print("Tiempo de ejecución: " + Fore.MAGENTA + str(execution_time) + Fore.RESET + " segundos")
 
     # Guardamos el modelo utilizando pickle
-    save_model(gs, vectorizer, text_cols)
+    save_model(gs, vectorizer, text_cols, cat2num_cols)
 
 
-def naive_bayes(vectorizer=None, text_cols=None):
+def naive_bayes(vectorizer=None, text_cols=None, cat2num_cols=None):
     """
     Función para implementar el algoritmo Naive Bayes.
     """
@@ -777,7 +802,7 @@ def naive_bayes(vectorizer=None, text_cols=None):
     mostrar_resultados(gs, x_dev, y_dev)
 
     # 4. Guardamos el modelo
-    save_model(gs, vectorizer, text_cols)
+    save_model(gs, vectorizer, text_cols, cat2num_cols)
 
 
 # Función principal
@@ -804,6 +829,12 @@ if __name__ == "__main__":
     # Cargamos los datos
     print("\n- Cargando datos...")
     data = load_data(args.file)
+
+    if args.debug:
+        print(data.head())
+        print(data.columns)
+        print(data.dtypes)
+
     # Descargamos los recursos necesarios de nltk
     print("\n- Descargando diccionarios...")
     nltk.download('stopwords')
@@ -812,7 +843,12 @@ if __name__ == "__main__":
     nltk.download('wordnet')
     # Preprocesamos los datos
     print("\n- Preprocesando datos...")
-    datos, text_cols, vectorizer = preprocesar_datos()
+
+    datos, text_cols, cat2num_cols, vectorizer = preprocesar_datos()
+
+    #Para comprobar si todavia quedan variables categoricas o textuales a parte del target (debug)
+    #print(data.select_dtypes(include=['object']).columns)
+
     if args.debug:
         try:
             print("\n- Guardando datos preprocesados...")
@@ -825,28 +861,28 @@ if __name__ == "__main__":
     print("\n- Ejecutando algoritmo...")
     if args.algorithm == "kNN":
         try:
-            kNN(vectorizer)
+            kNN(vectorizer, text_cols, cat2num_cols)
             print(Fore.GREEN+"Algoritmo kNN ejecutado con éxito"+Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
     elif args.algorithm == "decision_tree":
         try:
-            decision_tree(vectorizer, text_cols)
+            decision_tree(vectorizer, text_cols, cat2num_cols)
             print(Fore.GREEN+"Algoritmo árbol de decisión ejecutado con éxito"+Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
     elif args.algorithm == "random_forest":
         try:
-            random_forest(vectorizer, text_cols)
+            random_forest(vectorizer, text_cols, cat2num_cols)
             print(Fore.GREEN+"Algoritmo random forest ejecutado con éxito"+Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
     elif args.algorithm == "naive_bayes":
         try:
-            naive_bayes(vectorizer, text_cols)
+            naive_bayes(vectorizer, text_cols, cat2num_cols)
             print(Fore.GREEN + "Algoritmo Naive Bayes ejecutado con éxito" + Fore.RESET)
             sys.exit(0)
         except Exception as e:

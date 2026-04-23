@@ -59,11 +59,13 @@ def parse_args():
     parse.add_argument("-m", "--model", help="Fichero de modelo .pkl (/Path_to_file)", required=True)
     parse.add_argument("-j", "--json", help="Fichero de configuración .json (/Path_to_file)", required=True)
     parse.add_argument("-p", "--prediction", help="Columna a predecir (Nombre de la columna)", required=True)
+    parse.add_argument("-s", "--separador", help='Si se usa, separa el archivo csv con el argumento que se le pase (";" o ",")', required=False, default=',')
+    parse.add_argument("-st", "--sentiment", help='Si se usa, se asume que la columna de predicción es una puntuación del 1 al 5, y la transforma a "neutral","positivo" y "negativo"', required=False, action="store_true")
     parse.add_argument("-v", "--verbose", help="Muestra un resumen de los resultados por la terminal", required=False, default=False, action="store_true")
     parse.add_argument("--debug", help="Modo debug [Muestra informacion extra del preprocesado y almacena el resultado del mismo en un .csv]", required=False, default=False, action="store_true")
     # Parseamos los argumentos
     args = parse.parse_args()
-    
+
     # Leemos los parametros del JSON
     with open(args.json) as json_file:
         config = json.load(json_file)
@@ -82,7 +84,20 @@ def load_data(file):
     :return: Datos del fichero
     """
     try:
-        data = pd.read_csv(file, encoding='utf-8')
+        # Obtener el separador.
+        separador = args.separador
+
+        if separador == ";":
+            data = pd.read_csv(file, sep=";", encoding='utf-8')
+        elif separador == ",":
+            data = pd.read_csv(file, encoding='utf-8')
+        else:
+            print("No se reconoce el separador especificado en --separador")
+            exit(1)
+
+        # Eliminar columnas erroneas
+        data = data.loc[:, ~data.columns.str.contains("^Unnamed")]
+
         #Fore sirve para dar color
         print(Fore.GREEN+"Datos cargados con éxito"+Fore.RESET)
         return data
@@ -215,7 +230,7 @@ def reescaler(numerical_feature):
         exit(1)
 
 
-def cat2num(categorical_feature):
+def cat2num(categorical_feature, cat2num_cols=None):
     """
     Convierte las características categóricas en características numéricas utilizando la codificación de etiquetas.
 
@@ -228,20 +243,16 @@ def cat2num(categorical_feature):
         if len(categorical_feature.columns)>0 :
             estrategia = args.preprocessing.get("categorical_to_num", "none")
             if estrategia == "ordinal":
-                # --- ESTRATEGIA 1: Codificación Ordinal (Label Encoding) ---
-                # Convierte cada categoría en un número entero (ej. Rojo=0, Verde=1, Azul=2).
-                # PROS: Mantiene una sola columna, no aumenta el tamaño de los datos. Ideal para Árboles de Decisión.
-                # CONTRAS: Pésimo para kNN. kNN creerá que "Azul" (2) vale el doble que "Verde" (1), lo cual es falso si no hay orden real.
 
-                encoder = OrdinalEncoder()
-                data[categorical_feature.columns] = encoder.fit_transform(data[categorical_feature.columns])
+                #Usar las columnas obtenidas con el train para que sean las mismas
+                data[categorical_feature.columns] = cat2num_cols.transform(data[categorical_feature.columns])
+
             elif estrategia == "onehot":
-                # --- ESTRATEGIA 2: One-Hot Encoding (Variables Dummy) ---
-                # Crea una columna nueva por cada categoría con 0s y 1s.
-                # PROS: Perfecto para kNN porque no inventa un orden o jerarquía falsa entre categorías.
-                # CONTRAS: Si tienes una categoría con 100 valores distintos, te creará 100 columnas nuevas, haciendo el dataset enorme.
 
                 data = pd.get_dummies(data, columns=categorical_feature.columns, drop_first=True)
+                # alinear con train
+                data = data.reindex(columns=cat2num_cols, fill_value=0)
+
             elif estrategia == "none":
                 print(Fore.YELLOW + f"No se transforman datos categóricos a numéricos" + Fore.RESET)
                 return
@@ -270,7 +281,7 @@ def simplify_text(text_feature):
     try:
         if len(text_feature.columns) > 0:
             #preparamos las herramientas q usaremos luego
-            stop_words = set(stopwords.words('spanish'))  # Cambia a 'english' u otros idiomas
+            stop_words = set(stopwords.words('english'))  # Cambia a 'english' u otros idiomas
             stemmer = PorterStemmer()
 
             for col in text_feature.columns:
@@ -365,7 +376,16 @@ def drop_features():
         print(e)
         sys.exit(1)
 
-def preprocesar_datos(vectorizer=None, text_columns=None):
+def map_sentiment(score):
+    putnuacion = int(score)
+    if putnuacion == 3:
+        return "neutral"
+    elif putnuacion > 3:
+        return "positive"
+    elif putnuacion < 3:
+        return "negative"
+
+def preprocesar_datos(vectorizer=None, text_columns=None, cat2num_cols=None):
     """
     Función para preprocesar los datos
         1. Borramos target si existe (generalmente no habrá porque es dataset a predecir).
@@ -385,10 +405,18 @@ def preprocesar_datos(vectorizer=None, text_columns=None):
     # (NO SE USA EL TARGET EN LA PREDICCIÓN)
     if args.prediction in data.columns:
 
+        # Si sentiment analysis, forzar el score a numérico, y convertir en null lo que no lo sea
+        # Evitar fallos de comas en el texto.
+        # Traducir score a "positivo", "negativo", "neutro" si se trata con sentiment analysis
+        if args.sentiment:
+            data[args.prediction] = pd.to_numeric(data[args.prediction], errors="coerce")
+            data[args.prediction] = data[args.prediction].fillna(data[args.prediction].mode()[0])  # para clasificación
+            data[args.prediction] = data[args.prediction].apply(map_sentiment)
+
         y = data[args.prediction]
 
         # Tratamos missing values de la target (si hace falta)
-        if y.isnull().any():
+        if y.isnull().any() and not args.sentiment:
             y = y.fillna(y.mode()[0])  # para clasificación
 
         data = data.drop(columns=[args.prediction], errors="ignore")
@@ -405,26 +433,33 @@ def preprocesar_datos(vectorizer=None, text_columns=None):
     process_missing_values(numerical_feature, categorical_feature)
 
     # Pasar los datos a categoriales a numéricos
-    cat2num(categorical_feature)
+    cat2num(categorical_feature, cat2num_cols)
 
     # Simplificamos el texto
     simplify_text(text_feature)
 
     # Reescalamos los datos numéricos
     reescaler(numerical_feature)
-    
+
     # Tratamos el texto
     datos_text = process_text(text_feature, vectorizer, text_columns)
+
     #Si hay texto que ha sido tratado
     if datos_text is not None:
+        # eliminar texto original
+        data = data.drop(columns=text_feature.columns)
+
         # agregamos al DataFrame
-        data = pd.concat([numerical_feature, categorical_feature, datos_text], axis=1)
+        data = pd.concat([data, datos_text], axis=1)
+
+    # alinear con modelo
+    data = data.reindex(columns=model.feature_names_in_, fill_value=0)
 
     # devolvemos a data los valores del target, si existe, temporalmente
-    if y is not None:
-        data[args.prediction] = y
+    # if y is not None:
+    #     data[args.prediction] = y
 
-    return data
+    return data, y
 
 # Funciones para predecir con un modelo
 
@@ -444,8 +479,9 @@ def load_model(model):
             modelo = saved["gs"]
             vectorizer = saved["vectorizer"]
             text_columns = saved["text_columns"]
+            cat2num_cols = saved["cat2num_cols"]
             print(Fore.GREEN+"Modelo cargado con éxito"+Fore.RESET)
-            return modelo, vectorizer, text_columns
+            return modelo, vectorizer, text_columns, cat2num_cols
     except Exception as e:
         print(Fore.RED+"Error al cargar el modelo"+Fore.RESET)
         print(e)
@@ -470,6 +506,27 @@ def predict(y_test):
     # Añadimos la prediccion al dataframe data
     data = pd.concat([data, pd.DataFrame(prediction, columns=[args.prediction])], axis=1)
 
+def calculate_classification_report(y_true, y_pred):
+    """
+    Genera un informe de texto con Precision, Recall y F1 para cada clase.
+    """
+    #Hacer el clasification report
+    cr = classification_report(y_true, y_pred, zero_division=0)
+    with open('output/classification_report_test.txt', 'w') as f:
+        f.write(cr)
+
+    return cr
+
+def calculate_confusion_matrix(y_true, y_pred):
+    """
+    Genera la matriz de confusión para ver dónde se equivoca el modelo.
+    """
+    cm = confusion_matrix(y_true, y_pred)
+    df_cm = pd.DataFrame(cm)
+    df_cm.to_csv('output/matriz_confusion_test.csv', index=False)
+
+    return cm
+
 def mostrar_resultados(pred, y_test):
     """
         Muestra resultados de predicción para un modelo ya entrenado sobre el conjunto de test.
@@ -479,6 +536,9 @@ def mostrar_resultados(pred, y_test):
         - y_test: La columna con los valores reales del target. Estará vacío si no se incluye en el dataset.
     """
 
+    print(Fore.MAGENTA+"\nValores únicos en y_test:"+Fore.RESET)
+    print(pd.Series(y_test).unique()[:20])
+
     cont = pd.Series(pred).value_counts()
     print(Fore.MAGENTA + "> Distribución de predicciones:\n" + Fore.RESET)
     print(cont)
@@ -486,8 +546,8 @@ def mostrar_resultados(pred, y_test):
     if args.verbose and y_test is not None:
         print(Fore.MAGENTA+"> F1-score micro:\n"+Fore.RESET, f1_score(y_test, pred, average='micro'))
         print(Fore.MAGENTA+"> F1-score macro:\n"+Fore.RESET, f1_score(y_test, pred, average='macro'))
-        print(Fore.MAGENTA+"> Informe de clasificación:\n"+Fore.RESET, classification_report(y_test, pred, zero_division=0))
-        print(Fore.MAGENTA+"> Matriz de confusión:\n"+Fore.RESET, confusion_matrix(y_test, pred))
+        print(Fore.MAGENTA+"> Informe de clasificación:\n"+Fore.RESET, calculate_classification_report(y_test, pred))
+        print(Fore.MAGENTA+"> Matriz de confusión:\n"+Fore.RESET, calculate_confusion_matrix(y_test, pred))
 
     
 # Función principal
@@ -516,6 +576,12 @@ if __name__ == "__main__":
     # Cargamos los datos
     print("\n- Cargando datos...")
     data = load_data(args.file)
+
+    if args.debug:
+        print(data.head())
+        print(data.columns)
+        print(data.dtypes)
+
     ###para probar sin incluir target
     #data = data.drop(columns=[args.prediction], errors="ignore")
 
@@ -530,17 +596,25 @@ if __name__ == "__main__":
 
     # Cargamos el modelo
     print("\n- Cargando modelo...")
-    model, vectorizer, text_columns = load_model(args.model)
+    model, vectorizer, text_columns, cat2num_cols = load_model(args.model)
 
-    preprocesar_datos(vectorizer, text_columns)
+    if args.debug:
+        print(Fore.MAGENTA+"\nANTES DEL PREPROCESADO"+Fore.RESET)
+        cols = data.columns.tolist()
+        print(Fore.MAGENTA + "Columnas test:" + Fore.RESET)
+        print("Inicio:", cols[:10])
+        print("Final:", cols[-10:])
+    print(Fore.MAGENTA+"Columnas modelo:"+Fore.RESET, model.feature_names_in_)
+
+    data, y = preprocesar_datos(vectorizer, text_columns, cat2num_cols)
 
     # Nos quedamos solo con features, y guardamos el target por si acaso se incluye, para comparar predicciones
     # (NO SE USA EL TARGET EN LA PREDICCIÓN)
-    if args.prediction in data.columns:
-        y = data[args.prediction]
-        data = data.drop(columns=[args.prediction], errors="ignore")
-    else:
-        y = None
+    # if args.prediction in data.columns:
+    #     y = data[args.prediction]
+    #     data = data.drop(columns=[args.prediction], errors="ignore")
+    # else:
+    #     y = None
 
     if args.debug:
         try:
@@ -549,6 +623,14 @@ if __name__ == "__main__":
             print(Fore.GREEN+"Datos preprocesados guardados con éxito"+Fore.RESET)
         except Exception as e:
             print(Fore.RED+"Error al guardar los datos preprocesados"+Fore.RESET)
+
+    if args.debug:
+        print(Fore.MAGENTA+"\nANTES DE PREDECIR"+Fore.RESET)
+        cols = data.columns.tolist()
+        print(Fore.MAGENTA + "Columnas test:" + Fore.RESET)
+        print("Inicio:", cols[:10])
+        print("Final:", cols[-10:])
+        print(Fore.MAGENTA+"Columnas modelo:"+Fore.RESET, model.feature_names_in_)
 
     # Predecimos
     print("\n- Prediciendo...")

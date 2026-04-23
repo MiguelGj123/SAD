@@ -4,9 +4,9 @@
     "imputer_cat": "most_frequent",
     "unique_category_threshold":  10,
     "scaler":  "standard",
-    "text_process": "none",
-    "drop_features":  [],
-    "sampling": "oversampling",
+    "text_process": "bow",
+    "drop_features":  ["reviewId"],
+    "sampling": "None",
     "categorical_to_num": "onehot"
     },
   "decision_tree": {
@@ -16,7 +16,7 @@
     "min_samples_leaf": [1, 2, 3]
   },
   "kNN": {
-        "n_neighbors": [4, 6, 8],
+        "n_neighbors": [5],
         "weights": ["uniform", "distance"],
         "metric": ["euclidean", "manhattan"]
     },
