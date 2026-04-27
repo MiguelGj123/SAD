@@ -295,7 +295,7 @@ df_neu['cluster_id'] = -1
 df_neu['top_palabras'] = 'neutro'
 df_resultado = pd.concat([df_resultado, df_neu], ignore_index=True)
 
-df_resultado.to_csv(os.path.join(OUTPUT_DIR, 'resultados_hard_clustering.csv'), index=False)
+df_resultado.to_csv(os.path.join(OUTPUT_DIR, 'resultados_hard_clustering.csv'), sep='~', index=False)
 print("✅ Guardado: 'resultados_hard_clustering.csv'")
 print(f"   Columnas: {df_resultado.columns.tolist()}")
 print("\n🎉 ¡Hard clustering completado!")

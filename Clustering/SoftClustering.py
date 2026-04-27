@@ -374,7 +374,7 @@ df_neu['topic_dominante'] = -1
 df_neu['top_palabras'] = 'neutro'
 df_resultado = pd.concat([df_resultado, df_neu], ignore_index=True)
 
-df_resultado.to_csv(os.path.join(OUTPUT_DIR, 'resultados_soft_clustering.csv'), sep=';' , index=False)
+df_resultado.to_csv(os.path.join(OUTPUT_DIR, 'resultados_soft_clustering.csv'), sep='~' , index=False)
 print("✅ Guardado: 'resultados_soft_clustering.csv'")
 print(f"   Columnas relevantes: reviewId, review, score, sentimiento, "
       f"topic_dominante, top_palabras, prob_topic_0 ... prob_topic_N")
