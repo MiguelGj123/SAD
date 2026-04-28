@@ -1,0 +1,55 @@
+{
+  "project": {
+    "random_state": 42,
+    "output_dir": "resultados_hard_clustering"
+  },
+  "data": {
+    "input_csv": "SoundCloud.csv",
+    "columns_to_load": ["reviewId", "review", "score", "gender", "location", "date"],
+    "score_col": "score",
+    "text_col": "review",
+    "sentiment_col": "sentimiento",
+    "labels": {
+      "positive": "positivo",
+      "neutral": "neutro",
+      "negative": "negativo"
+    },
+    "thresholds": {
+      "min_positive": 4,
+      "exact_neutral": 3
+    }
+  },
+  "features": {
+    "max_features": 5000,
+    "min_df": 5,
+    "max_df": 0.8,
+    "sublinear_tf": true
+  },
+  "model": {
+    "k_range": [2, 3, 4, 5, 6, 7, 8],
+    "eval_max_iter": 300,
+    "final_max_iter": 500,
+    "max_silhouette_samples": 500,
+    "n_top_words": 15
+  },
+  "visualization": {
+    "tsne": { "samples": 1500, "perplexity": 30, "max_iter": 1000 },
+    "style": { "dpi": 200, "figsize_eval": [14, 5], "figsize_tsne": [12, 8], "n_words_legend": 3, "colormap": "tab10" }
+  },
+  "export": {
+    "separator": "~",
+    "neutral_id": -1,
+    "top_words_in_csv": 5,
+    "filename": "resultados_hard_clustering.csv"
+  },
+  "stopwords": [
+    "it", "the", "to", "and", "is", "this", "that", "for", "of", "in",
+    "my", "me", "you", "your", "so", "but", "not", "be", "are", "was",
+    "have", "has", "had", "do", "did", "will", "would", "can", "could",
+    "with", "on", "at", "by", "as", "an", "or", "if", "up", "out", "all",
+    "its", "from", "just", "they", "their", "them", "we", "our", "us",
+    "he", "she", "been", "more", "than", "when", "what", "how", "now",
+    "get", "got", "even", "also", "very", "too", "still", "after",
+    "before", "soundcloud", "sound", "cloud"
+  ]
+}

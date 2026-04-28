@@ -1,0 +1,18 @@
+# Clustering scripts — SoundCloud reviews
+# Instalar con: pip install -r requirements.txt
+
+pandas>=1.5.0
+numpy>=1.23.0
+scikit-learn>=1.2.0
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# Soft clustering (LDA)
+# gensim para la métrica de coherencia c_v (recomendado)
+gensim>=4.3.0
+
+# Visualización interactiva de LDA (opcional pero muy útil para presentar)
+pyLDAvis>=3.4.0
+
+# Si quieres usar sentence-transformers (script original)
+# sentence-transformers>=2.2.0
