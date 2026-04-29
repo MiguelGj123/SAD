@@ -4,7 +4,8 @@ import numpy as np
 
 
 def build_tfidf_vectorizer(max_features: int, min_df: int, max_df: float,
-                           custom_stopwords: List[str]) -> TfidfVectorizer:
+                           custom_stopwords: List[str],
+                           ngram_range: Tuple[int, int] = (1, 1)) -> TfidfVectorizer:
     """
     Construye y configura un modelo TF-IDF (Term Frequency - Inverse Document Frequency).
     Ideal para Hard Clustering (K-Means) ya que penaliza las palabras muy frecuentes.
@@ -23,12 +24,14 @@ def build_tfidf_vectorizer(max_features: int, min_df: int, max_df: float,
         min_df=min_df,
         max_df=max_df,
         sublinear_tf=True,
-        stop_words=custom_stopwords
+        stop_words=custom_stopwords,
+        ngram_range=ngram_range
     )
 
 
 def build_count_vectorizer(max_features: int, min_df: int, max_df: float,
-                           custom_stopwords: List[str]) -> CountVectorizer:
+                           custom_stopwords: List[str],
+                           ngram_range: Tuple[int, int] = (1, 1)) -> CountVectorizer:
     """
     Construye y configura un modelo Bag of Words (frecuencias absolutas).
     Requisito estricto para Soft Clustering (LDA), ya que este algoritmo se basa en conteos.
@@ -46,7 +49,8 @@ def build_count_vectorizer(max_features: int, min_df: int, max_df: float,
         max_features=max_features,
         min_df=min_df,
         max_df=max_df,
-        stop_words=custom_stopwords
+        stop_words=custom_stopwords,
+        ngram_range=ngram_range
     )
 
 

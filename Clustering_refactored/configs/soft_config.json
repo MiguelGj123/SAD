@@ -22,7 +22,8 @@
   "features": {
     "max_features": 4000,
     "min_df": 5,
-    "max_df": 0.8
+    "max_df": 0.8,
+    "ngram_range": [1, 2]
   },
   "model": {
     "n_topics_range": [2, 3, 4, 5, 6, 7, 8],

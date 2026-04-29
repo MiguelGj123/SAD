@@ -49,7 +49,7 @@ def process_soft_sentiment_subset(df_subset: pd.DataFrame, sentiment_label: str,
     print(f"\n  [{sentiment_label.upper()}] Vectorizando con CountVectorizer...")
     vectorizer_model = build_count_vectorizer(
         cfg["features"]["max_features"], cfg["features"]["min_df"],
-        cfg["features"]["max_df"], cfg["stopwords"]
+        cfg["features"]["max_df"], cfg["stopwords"], tuple(cfg["features"].get("ngram_range", [1, 1]))
     )
 
     # 3. Ajustamos el modelo a los textos y obtenemos la matriz X, el modelo ajustado y el vocabulario
