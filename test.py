@@ -512,7 +512,7 @@ def calculate_classification_report(y_true, y_pred):
     """
     #Hacer el clasification report
     cr = classification_report(y_true, y_pred, zero_division=0)
-    with open('mejor-output-sin-oversampling/classification_report_test.txt', 'w') as f:
+    with open('output/classification_report_test.txt', 'w') as f:
         f.write(cr)
 
     return cr

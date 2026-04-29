@@ -582,11 +582,11 @@ def save_model(gs, vectorizer=None, text_columns=None, cat2num_cols=None):
             "text_columns": text_columns,
             "cat2num_cols": cat2num_cols
         }
-        with open(f'mejor-output-sin-oversampling/{nombre}.pkl', 'wb') as file:
+        with open(f'output/{nombre}.pkl', 'wb') as file:
             pickle.dump(modelo_completo, file)
             print(Fore.CYAN + "Modelo: "+ f"{nombre}" +" guardado con éxito" + Fore.RESET)
 
-        with open('mejor-output-sin-oversampling/modelo.csv', 'w') as file:
+        with open('output/modelo.csv', 'w') as file:
             writer = csv.writer(file)
             writer.writerow(['Params', 'Score'])
             for params, score in zip(gs.cv_results_['params'], gs.cv_results_['mean_test_score']):
@@ -630,7 +630,7 @@ def calculate_classification_report(y_true, y_pred):
     """
     #Hacer el clasification report
     cr = classification_report(y_true, y_pred, zero_division=0)
-    with open('mejor-output-sin-oversampling/classification_report_train.txt', 'w') as f:
+    with open('output/classification_report_train.txt', 'w') as f:
         f.write(cr)
 
     return cr
@@ -900,7 +900,7 @@ if __name__ == "__main__":
     # Si la carpeta output no existe la creamos
     print("\n- Creando carpeta output...")
     try:
-        os.makedirs('mejor-output-sin-oversampling')
+        os.makedirs('output')
         print(Fore.GREEN+"Carpeta output creada con éxito"+Fore.RESET)
     except FileExistsError:
         print(Fore.GREEN+"La carpeta output ya existe"+Fore.RESET)
