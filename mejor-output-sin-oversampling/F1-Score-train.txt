@@ -1,0 +1,9 @@
+Tiempo de ejecución: 613.3885953426361 segundos
+> Mejores parametros:
+ {'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': None, 'C': 1}
+> Mejor puntuacion:
+ 0.8453912741420035
+> F1-score micro:
+ 0.848
+> F1-score macro:
+ 0.6010340509620874

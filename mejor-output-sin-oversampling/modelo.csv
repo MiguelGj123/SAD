@@ -1,0 +1,9 @@
+Params,Score
+"{'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': None, 'C': 0.01}",0.8025509239961096
+"{'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': 'balanced', 'C': 0.01}",0.7928827289148256
+"{'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': None, 'C': 0.1}",0.8388907183548702
+"{'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': 'balanced', 'C': 0.1}",0.7947160969848548
+"{'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': None, 'C': 1}",0.8459745380019452
+"{'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': 'balanced', 'C': 1}",0.7950496040016672
+"{'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': None, 'C': 3}",0.8442247464221202
+"{'solver': 'lbfgs', 'penalty': 'l2', 'class_weight': 'balanced', 'C': 3}",0.7937993955814923

@@ -1,0 +1,5 @@
+Params,Score
+"{'C': 0.01, 'penalty': 'l2', 'solver': 'lbfgs'}",0.6897628252932289
+"{'C': 0.1, 'penalty': 'l2', 'solver': 'lbfgs'}",0.7340016536822638
+"{'C': 1, 'penalty': 'l2', 'solver': 'lbfgs'}",0.7592006896807053
+"{'C': 3, 'penalty': 'l2', 'solver': 'lbfgs'}",0.7646837147556763

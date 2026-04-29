@@ -2,32 +2,37 @@
   "preprocessing" : {
     "imputer_num": "mean",
     "imputer_cat": "most_frequent",
-    "unique_category_threshold":  10,
-    "scaler":  "standard",
+    "unique_category_threshold": 10,
+    "scaler":  "maxabs",
     "text_process": "bow",
     "drop_features":  ["reviewId"],
     "sampling": "None",
-    "categorical_to_num": "onehot"
+    "categorical_to_num": "ordinal"
     },
   "decision_tree": {
     "criterion": ["gini", "entropy"],
-    "max_depth": [3, 5, 10, null],
+    "max_depth": [3, 5, 10, 20, 30, null],
     "min_samples_split": [2, 5, 10],
-    "min_samples_leaf": [1, 2, 3]
+    "min_samples_leaf": [1, 2, 3, 5]
   },
   "kNN": {
-        "n_neighbors": [5],
+        "n_neighbors": [3, 5, 7, 11, 21, 31, 51, 71, 91, 101, 121],
         "weights": ["uniform", "distance"],
         "metric": ["euclidean", "manhattan"]
     },
   "random_forest": {
-    "n_estimators": [50, 100, 200],
-    "max_depth": [null, 5, 10],
+    "n_estimators": [100, 200],
+    "max_depth": [15, null],
     "min_samples_split": [2, 5],
     "min_samples_leaf": [1, 2],
-    "max_features": ["sqrt", "log2"]
+    "max_features": ["sqrt", null]
   },
   "naive_bayes": {
-    "var_smoothing": [1e-9, 1e-8, 1e-7, 1e-6, 1e-5]
+    "multinomialnb" : {
+      "alpha": [0.1, 0.5, 1.0, 2.0]
+    },
+    "gaussiannb" : {
+      "var_smoothing": [1e-9, 1e-8, 1e-7, 1e-6, 1e-5]
+    }
   }
 }

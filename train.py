@@ -28,8 +28,12 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.naive_bayes import GaussianNB
+from sklearn.naive_bayes import MultinomialNB
 from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, classification_report
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.linear_model import LogisticRegression
+
 # Nltk
 import nltk
 from nltk.corpus import stopwords
@@ -60,7 +64,7 @@ def parse_args():
     parse = argparse.ArgumentParser(description="Practica de algoritmos de clasificación de datos.")
     parse.add_argument("-f", "--file", help="Fichero de datos .csv (/Path_to_file)", required=True)
     parse.add_argument("-j", "--json", help="Fichero de configuración .json (/Path_to_file)", required=True)
-    parse.add_argument("-a", "--algorithm", help="Algoritmo a ejecutar (kNN, decision_tree, random_forest o naive_bayes)", required=True)
+    parse.add_argument("-a", "--algorithm", help="Algoritmo a ejecutar (kNN, decision_tree, random_forest, naive_bayes o logistic_regression)", required=True)
     parse.add_argument("-p", "--prediction", help="Columna a predecir (Nombre de la columna)", required=True)
     parse.add_argument("-s", "--separador", help='Si se usa, separa el archivo csv con el argumento que se le pase (";" o ",")', required=False, default=',')
     parse.add_argument("-st", "--sentiment", help='Si se usa, se asume que la columna de predicción es una puntuación del 1 al 5, y la transforma a "neutral","positivo" y "negativo"', required=False, action="store_true")
@@ -345,7 +349,7 @@ def process_text(text_feature):
         if text_feature.columns.size > 0:
             if args.preprocessing["text_process"] == "tf-idf":
                #con max_features limitamos la cantidad de palabras que se usan, para datasets muy grandes.
-               tfidf_vectorizer = TfidfVectorizer(max_features=1000)
+               tfidf_vectorizer = TfidfVectorizer(max_features=3500)
                text_data = data[text_feature.columns].apply(lambda x: ' '.join(x.astype(str)), axis=1)
                tfidf_matrix = tfidf_vectorizer.fit_transform(text_data)
                text_features_df = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
@@ -359,7 +363,7 @@ def process_text(text_feature):
                return text_cols,tfidf_vectorizer
 
             elif args.preprocessing["text_process"] == "bow":
-                bow_vecotirizer = CountVectorizer(max_features=1000)
+                bow_vecotirizer = CountVectorizer(max_features=3500)
                 text_data = data[text_feature.columns].apply(lambda x: ' '.join(x.astype(str)), axis=1)
                 bow_matrix = bow_vecotirizer.fit_transform(text_data)
                 text_features_df = pd.DataFrame(bow_matrix.toarray(), columns=bow_vecotirizer.get_feature_names_out())
@@ -578,11 +582,11 @@ def save_model(gs, vectorizer=None, text_columns=None, cat2num_cols=None):
             "text_columns": text_columns,
             "cat2num_cols": cat2num_cols
         }
-        with open(f'output/{nombre}.pkl', 'wb') as file:
+        with open(f'mejor-output-sin-oversampling/{nombre}.pkl', 'wb') as file:
             pickle.dump(modelo_completo, file)
             print(Fore.CYAN + "Modelo: "+ f"{nombre}" +" guardado con éxito" + Fore.RESET)
 
-        with open('output/modelo.csv', 'w') as file:
+        with open('mejor-output-sin-oversampling/modelo.csv', 'w') as file:
             writer = csv.writer(file)
             writer.writerow(['Params', 'Score'])
             for params, score in zip(gs.cv_results_['params'], gs.cv_results_['mean_test_score']):
@@ -626,7 +630,7 @@ def calculate_classification_report(y_true, y_pred):
     """
     #Hacer el clasification report
     cr = classification_report(y_true, y_pred, zero_division=0)
-    with open('output/classification_report_train.txt', 'w') as f:
+    with open('mejor-output-sin-oversampling/classification_report_train.txt', 'w') as f:
         f.write(cr)
 
     return cr
@@ -744,14 +748,28 @@ def random_forest(vectorizer=None, text_cols=None, cat2num_cols=None):
     with tqdm(total=100, desc='Procesando random forest', unit='iter', leave=True) as pbar:
 
         # 1. Instanciamos el modelo base (El Bosque)
-        rf = RandomForestClassifier(random_state=42)
+        rf = RandomForestClassifier(random_state=42, n_jobs = 1)
 
         # 2. Configuramos la Búsqueda en Cuadrícula leyendo args.random_forest del JSON
-        gs = GridSearchCV(estimator=rf,
-                          param_grid=args.random_forest,
-                          cv=5,
-                          n_jobs=args.cpu,
-                          scoring=args.estimator)
+        # Si no es análisis de sentiment, utilizar GridSearch para mejores resultados
+        if not args.sentiment:
+            gs = GridSearchCV(estimator=rf,
+                              param_grid=args.random_forest,
+                              cv=5,
+                              n_jobs=args.cpu,
+                              scoring=args.estimator,
+                              verbose=2)
+        # Para sentiment analisis con muchos datos, utilizar randomized search
+        # 10% - 20% peores resultados que GridSearch, pero la velocidad se vuelve asequible
+        else:
+            gs = RandomizedSearchCV(estimator=rf,
+                              param_distributions=args.random_forest,
+                              n_iter=30,
+                              cv=5,
+                              n_jobs=args.cpu,
+                              scoring=args.estimator,
+                              verbose=2,
+                              random_state=42)
 
         # 3. Entrenamos midiendo el tiempo
         start_time = time.time()
@@ -780,8 +798,13 @@ def naive_bayes(vectorizer=None, text_cols=None, cat2num_cols=None):
 
     # Hacemos un barrido de hiperparametros
     with tqdm(total=100, desc='Procesando Naive Bayes', unit='iter', leave=True) as pbar:
-        # Usamos args.naive_bayes porque en parse_args() tu grupo vuelca el JSON en args
-        gs = GridSearchCV(GaussianNB(), args.naive_bayes, cv=5, n_jobs=args.cpu, scoring=args.estimator)
+
+        #Si hacemos sentiment analysis, procesamos texto, asi que usamos MultinomialNB
+        if args.sentiment:
+             gs = GridSearchCV(MultinomialNB(), args.naive_bayes["multinomialnb"], cv=5, n_jobs=args.cpu, scoring=args.estimator)
+        else:
+            # Usamos args.naive_bayes porque en parse_args() tu grupo vuelca el JSON en args
+            gs = GridSearchCV(GaussianNB(), args.naive_bayes["gaussiannb"], cv=5, n_jobs=args.cpu, scoring=args.estimator)
 
         start_time = time.time()
         gs.fit(x_train, y_train)
@@ -804,6 +827,65 @@ def naive_bayes(vectorizer=None, text_cols=None, cat2num_cols=None):
     # 4. Guardamos el modelo
     save_model(gs, vectorizer, text_cols, cat2num_cols)
 
+def logistic_regression(vectorizer=None, text_cols=None, cat2num_cols=None):
+    """
+    Función para implementar Logistic Regression con búsqueda de hiperparámetros.
+    """
+
+    # Dividimos los datos en entrenamiento y dev
+    x_train, x_dev, y_train, y_dev = divide_data()
+
+    with (tqdm(total=100, desc='Procesando Logistic Regression', unit='iter', leave=True) as pbar):
+
+        # Modelo base
+        lr = LogisticRegression(max_iter=1000)
+
+        #Grid de hiperparámetros
+        param_grid = {
+            "C": [0.01, 0.1, 1, 3],
+            "penalty": ["l2"],  # l1 también posible, pero más lento
+            "solver": ["lbfgs"],  # rápido para l2
+            "class_weight": [None, "balanced"]
+        }
+
+        # Para sentiment → mejor Randomized o grid pequeño
+        if args.sentiment:
+            gs = RandomizedSearchCV(
+                estimator=lr,
+                param_distributions=param_grid,
+                n_iter=10,
+                cv=5,
+                n_jobs=args.cpu,
+                scoring=args.estimator,
+                verbose=2,
+                random_state=42
+            )
+        else:
+            gs = GridSearchCV(
+                estimator=lr,
+                param_grid=param_grid,
+                cv=5,
+                n_jobs=args.cpu,
+                scoring=args.estimator,
+                verbose=2
+            )
+
+        # Entrenamiento
+        start_time = time.time()
+        gs.fit(x_train, y_train)
+        end_time = time.time()
+
+        pbar.update(100)
+
+    execution_time = end_time - start_time
+
+    print("Tiempo de ejecución: " + Fore.MAGENTA + str(execution_time) + Fore.RESET + " segundos")
+
+    # Resultados
+    mostrar_resultados(gs, x_dev, y_dev)
+
+    # Guardar modelo
+    save_model(gs, vectorizer, text_cols, cat2num_cols)
 
 # Función principal
 
@@ -818,7 +900,7 @@ if __name__ == "__main__":
     # Si la carpeta output no existe la creamos
     print("\n- Creando carpeta output...")
     try:
-        os.makedirs('output')
+        os.makedirs('mejor-output-sin-oversampling')
         print(Fore.GREEN+"Carpeta output creada con éxito"+Fore.RESET)
     except FileExistsError:
         print(Fore.GREEN+"La carpeta output ya existe"+Fore.RESET)
@@ -887,6 +969,14 @@ if __name__ == "__main__":
             sys.exit(0)
         except Exception as e:
             print(e)
+    elif args.algorithm == "logistic_regression":
+        try:
+            logistic_regression(vectorizer, text_cols, cat2num_cols)
+            print(Fore.GREEN + "Algoritmo Logistic Regression ejecutado con éxito" + Fore.RESET)
+            sys.exit(0)
+        except Exception as e:
+            print(e)
+
     else:
         print(Fore.RED+"Algoritmo no soportado"+Fore.RESET)
         sys.exit(1)
