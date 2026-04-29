@@ -20,7 +20,7 @@
     }
   },
   "features": {
-    "max_features": 4000,
+    "max_features": 8000,
     "min_df": 5,
     "max_df": 0.8,
     "ngram_range": [1, 2]
