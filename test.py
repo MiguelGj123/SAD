@@ -438,9 +438,6 @@ def preprocesar_datos(vectorizer=None, text_columns=None, cat2num_cols=None):
     # Simplificamos el texto
     simplify_text(text_feature)
 
-    # Reescalamos los datos numéricos
-    reescaler(numerical_feature)
-
     # Tratamos el texto
     datos_text = process_text(text_feature, vectorizer, text_columns)
 
@@ -454,6 +451,12 @@ def preprocesar_datos(vectorizer=None, text_columns=None, cat2num_cols=None):
 
     # alinear con modelo
     data = data.reindex(columns=model.feature_names_in_, fill_value=0)
+
+    # volver a separar datos por tipos, para reconocer los nuevos datos numéricos
+    numerical_feature, text_feature, categorical_feature = select_features()
+
+    # Reescalamos los datos numéricos
+    reescaler(numerical_feature)
 
     # devolvemos a data los valores del target, si existe, temporalmente
     # if y is not None:

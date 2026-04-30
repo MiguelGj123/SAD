@@ -45,7 +45,6 @@ from imblearn.under_sampling import RandomUnderSampler
 from imblearn.over_sampling import RandomOverSampler
 from tqdm import tqdm
 
-
 # Funciones auxiliares
 
 def signal_handler(sig, frame):
@@ -57,10 +56,11 @@ def signal_handler(sig, frame):
     print("\nSaliendo del programa...")
     sys.exit(0)
 
-def parse_args():
+def parse_args(argarray=None):
     """
     Función para parsear los argumentos de entrada
     """
+
     parse = argparse.ArgumentParser(description="Practica de algoritmos de clasificación de datos.")
     parse.add_argument("-f", "--file", help="Fichero de datos .csv (/Path_to_file)", required=True)
     parse.add_argument("-j", "--json", help="Fichero de configuración .json (/Path_to_file)", required=True)
@@ -73,16 +73,18 @@ def parse_args():
     parse.add_argument("-v", "--verbose", help="Muestra las metricas por la terminal", required=False, default=False, action="store_true")
     parse.add_argument("--debug", help="Modo debug [Muestra informacion extra del preprocesado y almacena el resultado del mismo en un .csv]", required=False, default=False, action="store_true")
     # Parseamos los argumentos
-    args = parse.parse_args()
+    # Si hay array de argumentos, se usa ese array en vez de los argumentos de entrada
+
+    args = parse.parse_args(argarray)
 
     # Leemos los parametros del JSON
     with open(args.json) as json_file:
         config = json.load(json_file)
-    
+
     # Juntamos los argumentos en una variable
     for key, value in config.items():
         setattr(args, key, value)
-    
+
     # Parseamos los argumentos
     return args
 
@@ -95,7 +97,7 @@ def map_sentiment(score):
     elif putnuacion < 3:
         return "negative"
 
-def load_data(file):
+def load_data(file, args):
     """
     Función para cargar los datos de un fichero csv
     :param file: Fichero csv
@@ -126,7 +128,7 @@ def load_data(file):
 
 # Funciones para preprocesar los datos
 
-def select_features():
+def select_features(args, data):
     """
     Separa las características del conjunto de datos en características numéricas, de texto y categóricas.
 
@@ -145,24 +147,24 @@ def select_features():
         #Quedarse solo con los atributos categoricos que tengan X o menos posibles valores distintos.
         # X se define en el json en unique_category_threshold.
         categorical_feature = categorical_feature.loc[:, categorical_feature.nunique() <= args.preprocessing["unique_category_threshold"]]
-        
+
         # Text features
         # Selecciona todas las columnas categoricas, y solo se quedan con las que tienen más de X posibles valores distintos.
         text_feature = data.select_dtypes(include='object').drop(columns=categorical_feature.columns)
 
         print(Fore.GREEN+"Datos separados con éxito"+Fore.RESET)
-        
+
         if args.debug:
             print(Fore.MAGENTA+"> Columnas numéricas:\n"+Fore.RESET, numerical_feature.columns)
             print(Fore.MAGENTA+"> Columnas de texto:\n"+Fore.RESET, text_feature.columns)
             print(Fore.MAGENTA+"> Columnas categóricas:\n"+Fore.RESET, categorical_feature.columns)
-        return numerical_feature, text_feature, categorical_feature
+        return numerical_feature, text_feature, categorical_feature, data
     except Exception as e:
         print(Fore.RED+"Error al separar los datos"+Fore.RESET)
         print(e)
         sys.exit(1)
 
-def process_missing_values(numerical_feature, categorical_feature):
+def process_missing_values(numerical_feature, categorical_feature, args, data):
     """
     Procesa los valores faltantes en los datos según la estrategia especificada en los argumentos.
 
@@ -177,7 +179,6 @@ def process_missing_values(numerical_feature, categorical_feature):
         None
     """
 
-    global data
     try:
         # 1. Leemos las estrategias del JSON (con valores por defecto por si el usuario olvida ponerlas)
         # Asumimos que en tu JSON hay algo como: "preprocessing": {"imputer_num": "mean", "imputer_cat": "most_frequent"}
@@ -195,13 +196,13 @@ def process_missing_values(numerical_feature, categorical_feature):
             imputer_cat = SimpleImputer(strategy=strategy_cat)
             data[categorical_feature.columns] = imputer_cat.fit_transform(data[categorical_feature.columns])
         print("Valores nulos procesados")
-
+        return data
     except Exception as e:
         print(Fore.RED + "Error al procesar los valores nulos" + Fore.RESET)
         print(e)
         sys.exit(1)
 
-def reescaler(numerical_feature):
+def reescaler(numerical_feature, args, data ):
     """
     Rescala las características numéricas en el conjunto de datos utilizando diferentes métodos de escala.
 
@@ -215,7 +216,6 @@ def reescaler(numerical_feature):
         Exception: Si hay un error al reescalar los datos.
 
     """
-    global data
     try:
         if len(numerical_feature.columns) > 0:
             # Leemos qué escalador quiere el usuario (ej: "preprocessing": {"scaler": "minmax"})
@@ -241,14 +241,14 @@ def reescaler(numerical_feature):
             # Aplicamos el escalador elegido
             data[numerical_feature.columns] = scaler.fit_transform(data[numerical_feature.columns])
             print("Escalado completado con exito")
-
+        return data
     except Exception as e:
         print(Fore.RED + "Error al reescalar los datos" + Fore.RESET)
         print(e)
         exit(1)
 
 
-def cat2num(categorical_feature):
+def cat2num(categorical_feature, args, data):
     """
     Convierte las características categóricas en características numéricas utilizando la codificación de etiquetas.
 
@@ -256,7 +256,6 @@ def cat2num(categorical_feature):
     categorical_feature (DataFrame): El DataFrame que contiene las características categóricas a convertir.
 
     """
-    global data
     try:
         if len(categorical_feature.columns)>0 :
             estrategia = args.preprocessing.get("categorical_to_num", "none")
@@ -270,7 +269,7 @@ def cat2num(categorical_feature):
                 data[categorical_feature.columns] = encoder.fit_transform(data[categorical_feature.columns])
 
                 print(Fore.GREEN + "Variables categóricas convertidas a numéricas con éxito" + Fore.RESET)
-                return encoder
+                return encoder, data
             elif estrategia == "onehot":
                 # --- ESTRATEGIA 2: One-Hot Encoding (Variables Dummy) ---
                 # Crea una columna nueva por cada categoría con 0s y 1s.
@@ -280,30 +279,29 @@ def cat2num(categorical_feature):
                 data = pd.get_dummies(data, columns=categorical_feature.columns, drop_first=True)
                 cat2num_cols = data.columns.tolist()
                 print(Fore.GREEN + "Variables categóricas convertidas a numéricas con éxito" + Fore.RESET)
-                return cat2num_cols
+                return cat2num_cols, data
             elif estrategia == "none":
                 print(Fore.YELLOW + f"No se transforman datos categóricos a numéricos" + Fore.RESET)
-                return None
+                return None, data
             else:
                 print(Fore.YELLOW + f"Estrategia de transformación de datos categóricos a numéticos: '{estrategia},' no reconocida" + Fore.RESET)
-                return None
+                return None, data
 
     except Exception as e:
         print("Error en la transformacion")
         print(e)
         exit(1)
 
-def simplify_text(text_feature):
+def simplify_text(text_feature, data):
     """
     Función que simplifica el texto de una columna dada en un DataFrame. lower,stemmer, tokenizer, stopwords del NLTK....
-    
+
     Parámetros:
     - text_feature: DataFrame - El DataFrame que contiene la columna de texto a simplificar.
-    
+
     Retorna:
     None
     """
-    global data
     try:
         if len(text_feature.columns) > 0:
             #preparamos las herramientas q usaremos luego
@@ -330,13 +328,13 @@ def simplify_text(text_feature):
                 data[col] = data[col].apply(clean_sentence)
 
             print(Fore.GREEN + "Texto simplificado con éxito" + Fore.RESET)
-
+        return data
     except Exception as e:
         print(Fore.RED + "Error al simplificar el texto" + Fore.RESET)
         print(e)
         sys.exit(1)
 
-def process_text(text_feature):
+def process_text(text_feature, args, data):
     """
     Procesa las características de texto utilizando técnicas de vectorización como TF-IDF o BOW.
 
@@ -344,12 +342,11 @@ def process_text(text_feature):
     text_feature (pandas.DataFrame): Un DataFrame que contiene las características de texto a procesar.
 
     """
-    global data
     try:
         if text_feature.columns.size > 0:
             if args.preprocessing["text_process"] == "tf-idf":
                #con max_features limitamos la cantidad de palabras que se usan, para datasets muy grandes.
-               tfidf_vectorizer = TfidfVectorizer(max_features=3500)
+               tfidf_vectorizer = TfidfVectorizer(max_features=2900)
                text_data = data[text_feature.columns].apply(lambda x: ' '.join(x.astype(str)), axis=1)
                tfidf_matrix = tfidf_vectorizer.fit_transform(text_data)
                text_features_df = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
@@ -360,10 +357,10 @@ def process_text(text_feature):
                data = pd.concat([data, text_features_df], axis=1)
                data.drop(text_feature.columns, axis=1, inplace=True)
                print(Fore.GREEN+"Texto tratado con éxito usando TF-IDF"+Fore.RESET)
-               return text_cols,tfidf_vectorizer
+               return text_cols,tfidf_vectorizer, data
 
             elif args.preprocessing["text_process"] == "bow":
-                bow_vecotirizer = CountVectorizer(max_features=3500)
+                bow_vecotirizer = CountVectorizer(max_features=2900)
                 text_data = data[text_feature.columns].apply(lambda x: ' '.join(x.astype(str)), axis=1)
                 bow_matrix = bow_vecotirizer.fit_transform(text_data)
                 text_features_df = pd.DataFrame(bow_matrix.toarray(), columns=bow_vecotirizer.get_feature_names_out())
@@ -373,37 +370,36 @@ def process_text(text_feature):
                 data = pd.concat([data, text_features_df], axis=1)
                 data.drop(text_feature.columns, axis=1, inplace=True)
                 print(Fore.GREEN+"Texto tratado con éxito usando BOW"+Fore.RESET)
-                return text_cols, bow_vecotirizer
+                return text_cols, bow_vecotirizer, data
 
             else:
                 print(Fore.YELLOW+"No se están tratando los textos"+Fore.RESET)
         else:
             print(Fore.YELLOW+"No se han encontrado columnas de texto a procesar"+Fore.RESET)
-        return None, None
+        return None, None, data
     except Exception as e:
         print(Fore.RED+"Error al tratar el texto"+Fore.RESET)
         print(e)
         sys.exit(1)
 
-def over_under_sampling():
+def over_under_sampling(args, data):
     """
     Realiza oversampling o undersampling en los datos según la estrategia especificada en args.preprocessing["sampling"].
-    
+
     Args:
         None
-    
+
     Returns:
         None
-    
+
     Raises:
         Exception: Si ocurre algún error al realizar el oversampling o undersampling.
     """
-    global data
     try:
         estrategia = args.preprocessing.get("sampling", "none").lower()
         if estrategia == "none":
             print("no hay balanceo")
-            return
+            return data
 
         # 1. Separamos temporalmente las características (X) del objetivo (y)
         X = data.drop(columns=[args.prediction])
@@ -424,18 +420,18 @@ def over_under_sampling():
 
         else:
             print(Fore.YELLOW + f"Estrategia de sampling '{estrategia}' no reconocida" + Fore.RESET)
-            return
+            return data
 
         # 3. Volvemos a juntar los datos balanceados en nuestro DataFrame global
         data = pd.concat([X_res, y_res], axis=1)
-
+        return data
     except Exception as e:
         print("Error en el under/oversampling de los datos")
         print(e)
         exit(1)
-  
 
-def drop_features():
+
+def drop_features(args, data):
     """
     Elimina las columnas especificadas del conjunto de datos.
 
@@ -443,7 +439,6 @@ def drop_features():
     features (list): Lista de nombres de columnas a eliminar.
 
     """
-    global data
     try:
         atributos_eliminar = args.preprocessing.get("drop_features", [])
         if len(atributos_eliminar) >0:
@@ -451,13 +446,13 @@ def drop_features():
             print(Fore.GREEN+"Columnas eliminadas con éxito"+Fore.RESET)
         else:
             print(Fore.GREEN+"Se ha decidido no eliminar ninguna columna"+Fore.RESET)
-
+        return data
     except Exception as e:
         print(Fore.RED+"Error al eliminar columnas"+Fore.RESET)
         print(e)
         sys.exit(1)
 
-def preprocesar_datos():
+def preprocesar_datos(args, data):
     """
     Función para preprocesar los datos
         1. Borramos columnas no necesarias (Especificarlas en .json)
@@ -471,8 +466,6 @@ def preprocesar_datos():
     :param data: Datos a preprocesar
     :return: Datos preprocesados y divididos en train y test
     """
-
-    global data
 
     # Si sentiment analysis, forzar el score a numérico, y convertir en null lo que no lo sea
     # Evitar fallos de comas en el texto.
@@ -489,41 +482,44 @@ def preprocesar_datos():
     if y.isnull().any() and not args.sentiment:
       y = y.fillna(y.mode()[0])  # para clasificación
 
+    # Borrar columnas no necesarias
+    data = drop_features(args, data)
+
     # Nos quedamos solo con features
     data = data.drop(columns=[args.prediction])
 
-    # Borrar columnas no necesarias
-    drop_features()
-
     # Separamos los datos por tipos
-    numerical_feature, text_feature, categorical_feature = select_features()
+    numerical_feature, text_feature, categorical_feature, data = select_features(args, data)
 
     # Tratamos missing values
-    process_missing_values(numerical_feature, categorical_feature)
+    data = process_missing_values(numerical_feature, categorical_feature,args,data)
 
     # Pasar los datos a categoriales a numéricos
-    cat2num_cols = cat2num(categorical_feature)
+    cat2num_cols, data = cat2num(categorical_feature,args, data)
 
     # Simplificamos el texto
-    simplify_text(text_feature)
+    data = simplify_text(text_feature, data)
+
+    # Tratamos el texto
+    text_cols, vectorizer, data = process_text(text_feature,args, data)
+
+    #Volvemos a seleccionar las features, para detectar las que han sido transformadas a números
+    numerical_feature, text_feature, categorical_feature, data = select_features(args, data)
 
     # Reescalamos los datos numéricos
-    reescaler(numerical_feature)
-    
-    # Tratamos el texto
-    text_cols, vectorizer = process_text(text_feature)
+    data = reescaler(numerical_feature, args, data)
 
     # devolvemos a data los valores del target, solo habiendo procesado missing values (evitar errores)
     data[args.prediction] = y
-    
+
     # Realizamos Oversampling o Undersampling
-    over_under_sampling()
+    data = over_under_sampling(args, data)
 
     return data, text_cols, cat2num_cols, vectorizer
 
 # Funciones para entrenar un modelo
 
-def divide_data():
+def divide_data(args, data):
     """
     Función que divide los datos en conjuntos de entrenamiento y desarrollo.
 
@@ -539,7 +535,6 @@ def divide_data():
     """
     # Sacamos la columna a predecir
 
-    global data  # Usamos nuestra variable global con los datos ya limpios
     try:
         # 1. Separamos X (las pistas) de Y (la respuesta)
         X = data.drop(columns=[args.prediction])  # dropeamos todas menos la columna a predecir
@@ -554,14 +549,14 @@ def divide_data():
         )
 
         print(Fore.GREEN + "Datos divididos en Train y Dev con éxito" + Fore.RESET)
-        return x_train, x_dev, y_train, y_dev
+        return x_train, x_dev, y_train, y_dev, data
 
     except Exception as e:
         print(Fore.RED + "Error al dividir los datos" + Fore.RESET)
         print(e)
         sys.exit(1)
- 
- 
+
+
 def save_model(gs, vectorizer=None, text_columns=None, cat2num_cols=None):
     """
     Guarda el modelo y los resultados de la búsqueda de hiperparámetros en archivos.
@@ -596,7 +591,7 @@ def save_model(gs, vectorizer=None, text_columns=None, cat2num_cols=None):
         print(Fore.RED+"Error al guardar el modelo"+Fore.RESET)
         print(e)
 
-def mostrar_resultados(gs, x_dev, y_dev):
+def mostrar_resultados(gs, x_dev, y_dev, args):
     """
     Muestra los resultados del clasificador.
 
@@ -617,23 +612,35 @@ def mostrar_resultados(gs, x_dev, y_dev):
 
 
     if args.verbose:
-        print(Fore.MAGENTA+"> Mejores parametros:\n"+Fore.RESET, gs.best_params_)
-        print(Fore.MAGENTA+"> Mejor puntuacion:\n"+Fore.RESET, gs.best_score_)
-        print(Fore.MAGENTA+"> F1-score micro:\n"+Fore.RESET, calculate_fscore(y_dev, gs.predict(x_dev))[0])
-        print(Fore.MAGENTA+"> F1-score macro:\n"+Fore.RESET, calculate_fscore(y_dev, gs.predict(x_dev))[1])
-        print(Fore.MAGENTA+"> Informe de clasificación:\n"+Fore.RESET, calculate_classification_report(y_dev, gs.predict(x_dev)))
-        print(Fore.MAGENTA+"> Matriz de confusión:\n"+Fore.RESET, calculate_confusion_matrix(y_dev, gs.predict(x_dev)))
+        print(Fore.MAGENTA + "> Mejores parametros:\n" + Fore.RESET, gs.best_params_)
+        print(Fore.MAGENTA + "> Mejor puntuacion:\n" + Fore.RESET, gs.best_score_)
+
+        fscore = calculate_fscore(y_dev, gs.predict(x_dev))
+        print(Fore.MAGENTA + "> F1-score micro:\n" + Fore.RESET, fscore[0])
+        print(Fore.MAGENTA + "> F1-score macro:\n" + Fore.RESET, fscore[1])
+        print(Fore.MAGENTA + "> Informe de clasificación:\n" + Fore.RESET,
+              calculate_classification_report(y_dev, gs.predict(x_dev)))
+        print(Fore.MAGENTA + "> Matriz de confusión:\n" + Fore.RESET,
+              calculate_confusion_matrix(y_dev, gs.predict(x_dev)))
+
+        with open('output/F1-score-train.csv', 'w') as file:
+            writer = csv.writer(file)
+            writer.writerow(["Mejores parametros", str(gs.best_params_)])
+            writer.writerow(["Mejor puntuacion", gs.best_score_])
+            writer.writerow(["F1-score micro", fscore[0]])
+            writer.writerow(["F1-score macro", fscore[1]])
 
 def calculate_classification_report(y_true, y_pred):
     """
     Genera un informe de texto con Precision, Recall y F1 para cada clase.
     """
     #Hacer el clasification report
-    cr = classification_report(y_true, y_pred, zero_division=0)
-    with open('output/classification_report_train.txt', 'w') as f:
-        f.write(cr)
+    cr_txt = classification_report(y_true, y_pred, zero_division=0)
+    cr = classification_report(y_true, y_pred, zero_division=0, output_dict=True)
+    df = pd.DataFrame(cr).transpose()
+    df.to_csv('output/classification_report_train.csv')
 
-    return cr
+    return cr_txt
 
 def calculate_confusion_matrix(y_true, y_pred):
     """
@@ -657,7 +664,7 @@ def calculate_fscore(y_true, y_pred):
     f1_macro = f1_score(y_true, y_pred, average='macro')
     return f1_micro, f1_macro
 
-def kNN(vectorizer=None, text_cols=None, cat2num_cols=None):
+def kNN(args, data, vectorizer=None, text_cols=None, cat2num_cols=None):
     """
     Función para implementar el algoritmo kNN.
     Hace un barrido de hiperparametros para encontrar los parametros optimos
@@ -668,8 +675,8 @@ def kNN(vectorizer=None, text_cols=None, cat2num_cols=None):
     :rtype: tuple
     """
     # Dividimos los datos en entrenamiento y dev
-    x_train, x_dev, y_train, y_dev = divide_data()
-    
+    x_train, x_dev, y_train, y_dev, data = divide_data(args, data)
+
     # Hacemos un barrido de hiperparametros
 
     with tqdm(total=100, desc='Procesando kNN', unit='iter', leave=True) as pbar:
@@ -685,14 +692,14 @@ def kNN(vectorizer=None, text_cols=None, cat2num_cols=None):
         pbar.update(0)
     execution_time = end_time - start_time
     print("Tiempo de ejecución:"+Fore.MAGENTA, execution_time,Fore.RESET+ "segundos")
-    
+
     # Mostramos los resultados
-    mostrar_resultados(gs, x_dev, y_dev)
-    
+    mostrar_resultados(gs, x_dev, y_dev, args)
+
     # Guardamos el modelo utilizando pickle
     save_model(gs,vectorizer,text_cols, cat2num_cols)
 
-def decision_tree(vectorizer=None, text_cols=None, cat2num_cols=None):
+def decision_tree(args, data, vectorizer=None, text_cols=None, cat2num_cols=None):
     """
     Función para implementar el algoritmo de árbol de decisión.
 
@@ -702,8 +709,8 @@ def decision_tree(vectorizer=None, text_cols=None, cat2num_cols=None):
     :rtype: tuple
     """
     # Dividimos los datos en entrenamiento y dev
-    x_train, x_dev, y_train, y_dev = divide_data()
-    
+    x_train, x_dev, y_train, y_dev, data = divide_data(args, data)
+
     # Hacemos un barrido de hiperparametros
     with tqdm(total=100, desc='Procesando decision tree', unit='iter', leave=True) as pbar:
 
@@ -723,12 +730,12 @@ def decision_tree(vectorizer=None, text_cols=None, cat2num_cols=None):
     print("Tiempo de ejecución: " + Fore.MAGENTA + str(execution_time) + Fore.RESET + " segundos")
 
     # Mostramos los resultados en los datos de examen (Dev)
-    mostrar_resultados(gs, x_dev, y_dev)
+    mostrar_resultados(gs, x_dev, y_dev, args)
 
     # Guardamos el modelo ganador en el disco duro
     save_model(gs, vectorizer, text_cols, cat2num_cols)
-    
-def random_forest(vectorizer=None, text_cols=None, cat2num_cols=None):
+
+def random_forest(args, data, vectorizer=None, text_cols=None, cat2num_cols=None):
     """
     Función que entrena un modelo de Random Forest utilizando GridSearchCV para encontrar los mejores hiperparámetros.
     Divide los datos en entrenamiento y desarrollo, realiza la búsqueda de hiperparámetros, guarda el modelo entrenado
@@ -742,7 +749,7 @@ def random_forest(vectorizer=None, text_cols=None, cat2num_cols=None):
     """
 
     # Dividimos los datos en entrenamiento y dev
-    x_train, x_dev, y_train, y_dev = divide_data()
+    x_train, x_dev, y_train, y_dev, data = divide_data(args, data)
 
     # Hacemos un barrido de hiperparametros
     with tqdm(total=100, desc='Procesando random forest', unit='iter', leave=True) as pbar:
@@ -781,20 +788,20 @@ def random_forest(vectorizer=None, text_cols=None, cat2num_cols=None):
 
     execution_time = end_time - start_time
     # Mostramos los resultados
-    mostrar_resultados(gs, x_dev, y_dev)
+    mostrar_resultados(gs, x_dev, y_dev, args)
     print("Tiempo de ejecución: " + Fore.MAGENTA + str(execution_time) + Fore.RESET + " segundos")
 
     # Guardamos el modelo utilizando pickle
     save_model(gs, vectorizer, text_cols, cat2num_cols)
 
 
-def naive_bayes(vectorizer=None, text_cols=None, cat2num_cols=None):
+def naive_bayes(args, data, vectorizer=None, text_cols=None, cat2num_cols=None):
     """
     Función para implementar el algoritmo Naive Bayes.
     """
 
     # Dividimos los datos en entrenamiento y dev
-    x_train, x_dev, y_train, y_dev = divide_data()
+    x_train, x_dev, y_train, y_dev, data = divide_data(args, data)
 
     # Hacemos un barrido de hiperparametros
     with tqdm(total=100, desc='Procesando Naive Bayes', unit='iter', leave=True) as pbar:
@@ -822,18 +829,18 @@ def naive_bayes(vectorizer=None, text_cols=None, cat2num_cols=None):
     print("Tiempo de ejecución:" + Fore.MAGENTA, f"{execution_time:.4f}", Fore.RESET + " segundos")
 
     # 3. Mostramos los resultados
-    mostrar_resultados(gs, x_dev, y_dev)
+    mostrar_resultados(gs, x_dev, y_dev, args)
 
     # 4. Guardamos el modelo
     save_model(gs, vectorizer, text_cols, cat2num_cols)
 
-def logistic_regression(vectorizer=None, text_cols=None, cat2num_cols=None):
+def logistic_regression(args, data, vectorizer=None, text_cols=None, cat2num_cols=None):
     """
     Función para implementar Logistic Regression con búsqueda de hiperparámetros.
     """
 
     # Dividimos los datos en entrenamiento y dev
-    x_train, x_dev, y_train, y_dev = divide_data()
+    x_train, x_dev, y_train, y_dev, data = divide_data(args, data)
 
     with (tqdm(total=100, desc='Procesando Logistic Regression', unit='iter', leave=True) as pbar):
 
@@ -843,8 +850,8 @@ def logistic_regression(vectorizer=None, text_cols=None, cat2num_cols=None):
         #Grid de hiperparámetros
         param_grid = {
             "C": [0.01, 0.1, 1, 3],
-            "penalty": ["l2"],  # l1 también posible, pero más lento
-            "solver": ["lbfgs"],  # rápido para l2
+            "l1_ratio": [0],
+            "solver": ["lbfgs"],  # rápido para l1_ratio = 0
             "class_weight": [None, "balanced"]
         }
 
@@ -876,41 +883,39 @@ def logistic_regression(vectorizer=None, text_cols=None, cat2num_cols=None):
         end_time = time.time()
 
         pbar.update(100)
-
     execution_time = end_time - start_time
 
     print("Tiempo de ejecución: " + Fore.MAGENTA + str(execution_time) + Fore.RESET + " segundos")
 
     # Resultados
-    mostrar_resultados(gs, x_dev, y_dev)
+    mostrar_resultados(gs, x_dev, y_dev, args)
 
     # Guardar modelo
     save_model(gs, vectorizer, text_cols, cat2num_cols)
 
 # Función principal
-
-if __name__ == "__main__":
+def run_train(argarray=None):
     # Fijamos la semilla
     np.random.seed(42)
     print("=== Clasificador ===")
     # Manejamos la señal SIGINT (Ctrl+C)
     signal.signal(signal.SIGINT, signal_handler)
     # Parseamos los argumentos
-    args = parse_args()
+    args = parse_args(argarray)
     # Si la carpeta output no existe la creamos
     print("\n- Creando carpeta output...")
     try:
         os.makedirs('output')
-        print(Fore.GREEN+"Carpeta output creada con éxito"+Fore.RESET)
+        print(Fore.GREEN + "Carpeta output creada con éxito" + Fore.RESET)
     except FileExistsError:
-        print(Fore.GREEN+"La carpeta output ya existe"+Fore.RESET)
+        print(Fore.GREEN + "La carpeta output ya existe" + Fore.RESET)
     except Exception as e:
-        print(Fore.RED+"Error al crear la carpeta output"+Fore.RESET)
+        print(Fore.RED + "Error al crear la carpeta output" + Fore.RESET)
         print(e)
         sys.exit(1)
     # Cargamos los datos
     print("\n- Cargando datos...")
-    data = load_data(args.file)
+    data = load_data(args.file, args)
 
     if args.debug:
         print(data.head())
@@ -926,57 +931,61 @@ if __name__ == "__main__":
     # Preprocesamos los datos
     print("\n- Preprocesando datos...")
 
-    datos, text_cols, cat2num_cols, vectorizer = preprocesar_datos()
-
-    #Para comprobar si todavia quedan variables categoricas o textuales a parte del target (debug)
-    #print(data.select_dtypes(include=['object']).columns)
+    data, text_cols, cat2num_cols, vectorizer = preprocesar_datos(args, data)
 
     if args.debug:
         try:
+            # Para comprobar si todavia quedan variables categoricas o textuales a parte del target (debug)
+            print(Fore.MAGENTA + "Variables categoricas o textuales después del preprocesado:\n" + Fore.RESET + str(
+                data.select_dtypes(include=['object']).columns))
+
             print("\n- Guardando datos preprocesados...")
             data.to_csv('output/data-processed.csv', index=False)
-            print(Fore.GREEN+"Datos preprocesados guardados con éxito"+Fore.RESET)
+            print(Fore.GREEN + "Datos preprocesados guardados con éxito" + Fore.RESET)
         except Exception as e:
-            print(Fore.RED+"Error al guardar los datos preprocesados"+Fore.RESET)
+            print(Fore.RED + "Error al guardar los datos preprocesados" + Fore.RESET)
+            print(Fore.RED + "DATA: " + Fore.RESET + str(data))
 
     # Ejecutamos el algoritmo seleccionado
     print("\n- Ejecutando algoritmo...")
     if args.algorithm == "kNN":
         try:
-            kNN(vectorizer, text_cols, cat2num_cols)
-            print(Fore.GREEN+"Algoritmo kNN ejecutado con éxito"+Fore.RESET)
+            kNN(args, data, vectorizer, text_cols, cat2num_cols)
+            print(Fore.GREEN + "Algoritmo kNN ejecutado con éxito" + Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
     elif args.algorithm == "decision_tree":
         try:
-            decision_tree(vectorizer, text_cols, cat2num_cols)
-            print(Fore.GREEN+"Algoritmo árbol de decisión ejecutado con éxito"+Fore.RESET)
+            decision_tree(args, data, vectorizer, text_cols, cat2num_cols)
+            print(Fore.GREEN + "Algoritmo árbol de decisión ejecutado con éxito" + Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
     elif args.algorithm == "random_forest":
         try:
-            random_forest(vectorizer, text_cols, cat2num_cols)
-            print(Fore.GREEN+"Algoritmo random forest ejecutado con éxito"+Fore.RESET)
+            random_forest(args, data, vectorizer, text_cols, cat2num_cols)
+            print(Fore.GREEN + "Algoritmo random forest ejecutado con éxito" + Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
     elif args.algorithm == "naive_bayes":
         try:
-            naive_bayes(vectorizer, text_cols, cat2num_cols)
+            naive_bayes(args, data, vectorizer, text_cols, cat2num_cols)
             print(Fore.GREEN + "Algoritmo Naive Bayes ejecutado con éxito" + Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
     elif args.algorithm == "logistic_regression":
         try:
-            logistic_regression(vectorizer, text_cols, cat2num_cols)
+            logistic_regression(args, data, vectorizer, text_cols, cat2num_cols)
             print(Fore.GREEN + "Algoritmo Logistic Regression ejecutado con éxito" + Fore.RESET)
             sys.exit(0)
         except Exception as e:
             print(e)
-
     else:
-        print(Fore.RED+"Algoritmo no soportado"+Fore.RESET)
+        print(Fore.RED + "Algoritmo no soportado" + Fore.RESET)
         sys.exit(1)
+
+if __name__ == "__main__":
+    run_train()

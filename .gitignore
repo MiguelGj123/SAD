@@ -1,6 +1,4 @@
 .idea/
 *.iml
 output/
-SantanderTest.csv
-irisTest.csv
 datasets/
