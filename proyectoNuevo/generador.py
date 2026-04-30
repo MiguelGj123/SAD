@@ -5,10 +5,10 @@ from langchain_core.prompts import PromptTemplate
 # =================================================================
 # VARIABLES DE ENTORNO Y PRUEBAS
 # =================================================================
-# Cambia esto para generar más o menos datos sintéticos
+# Cambiar para generar más o menos datos sintéticos
 N_MUESTRAS_GEN = 100
 
-# Opciones recomendadas: "llama3", "llama3.1", "gemma2:2b"
+# Opciones: "llama3", "llama3.1" (recomendada), "gemma2:2b"
 NOMBRE_MODELO = "llama3.1"
 
 # =================================================================
@@ -49,7 +49,7 @@ df['sentimiento_real'] = df['score'].apply(obtener_clase)
 # Filtramos solo los comentarios neutros
 comentarios_neutros = df[df['sentimiento_real'] == 'neutro'].head(N_MUESTRAS_GEN)
 
-# PROMPT ESTRICTO DE SISTEMA EN INGLÉS (Evita formato conversacional)
+# PROMPT ESTRICTO DE SISTEMA EN INGLÉS
 template_parafraxis = """
 You are a strict paraphrasing algorithm. Rewrite the text below into a single, neutral, formal English sentence.
 Do NOT output anything else. NO emojis. NO conversational text. NO examples.
@@ -64,7 +64,7 @@ print(f"\n--- Ejecutando Generación de Datos con el modelo {NOMBRE_MODELO} ---"
 nuevos_datos = []
 
 for i, row in comentarios_neutros.iterrows():
-    # LA GUILLOTINA: Obtenemos respuesta, limpiamos, cortamos en el primer salto de línea y quitamos comillas
+    # Obtenemos respuesta, limpiamos, cortamos en el primer salto de línea y quitamos comillas
     respuesta_bruta = chain_clase = chain_gen.invoke({"comentario": row['review']}).strip()
     parafraxis_limpia = respuesta_bruta.split('\n')[0].replace('"', '')
 
