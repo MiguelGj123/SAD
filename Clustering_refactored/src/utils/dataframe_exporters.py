@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import csv
 from typing import List, Dict
 
 
@@ -73,7 +74,7 @@ def prepare_neutral_reviews(df: pd.DataFrame, target_cluster_col: str, target_la
     return df_result
 
 
-def concat_and_export_csv(dataframes: List[pd.DataFrame], filepath: str, csv_separator: str = '~',
+def concat_and_export_csv(dataframes: List[pd.DataFrame], filepath: str, csv_separator: str = ',',
                           fill_na_prefix: str = None, fill_value: float = 0.0) -> None:
     """
     Concatena una lista de DataFrames y exporta el resultado a un archivo CSV.
@@ -93,4 +94,7 @@ def concat_and_export_csv(dataframes: List[pd.DataFrame], filepath: str, csv_sep
         target_cols = [c for c in df_resultado.columns if c.startswith(fill_na_prefix)]
         df_resultado[target_cols] = df_resultado[target_cols].fillna(fill_value)
 
-    df_resultado.to_csv(filepath, sep=csv_separator, index=False)
+    df_resultado.to_csv(filepath, sep= csv_separator ,  index=False,
+                        quoting=csv.QUOTE_NONNUMERIC,
+                        quotechar='"',
+                        escapechar='\\')

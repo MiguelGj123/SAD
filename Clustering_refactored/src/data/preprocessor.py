@@ -1,6 +1,15 @@
 import re
 import pandas as pd
+import spacy
+nlp = spacy.load("en_core_web_sm")
 
+def lemmatize_text(text: str) -> str:
+    """
+    Reduce las palabras a su forma base (lema).
+    listening → listen, listened → listen, artists → artist
+    """
+    doc = nlp(text)
+    return " ".join([token.lemma_ for token in doc if not token.is_space])
 
 def classify_sentiment_by_score(score: int, min_positive_score: int, exact_neutral_score: int) -> str:
     """

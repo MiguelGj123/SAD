@@ -37,7 +37,7 @@
     "style": { "dpi": 200, "figsize_eval": [14, 5], "figsize_tsne": [12, 8], "n_words_legend": 3, "colormap": "tab10" }
   },
   "export": {
-    "separator": "~",
+    "separator": ";",
     "neutral_id": -1,
     "top_words_in_csv": 5,
     "filename": "resultados_hard_clustering.csv"

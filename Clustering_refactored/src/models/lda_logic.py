@@ -50,8 +50,13 @@ def evaluate_lda_coherence_gensim(X: Any, tokenized_texts: List[List[str]], voca
         for topic_idx in range(k):
             # argsort() ordena los índices por su peso; [::-1] los invierte (de mayor a menor); [:top_words_for_eval] recorta los top N
             top_idx = lda.components_[topic_idx].argsort()[::-1][:top_words_for_eval]
+            all_words = [vocab[i] for i in top_idx]
+            valid_words = [w for w in all_words if w in diccionario.token2id]
 
-            # Mapeamos esos índices al vocabulario real y añadimos la lista de palabras del tópico a nuestra lista principal
+            if not valid_words:
+                return None
+
+                # Mapeamos esos índices al vocabulario real y añadimos la lista de palabras del tópico a nuestra lista principal
             topics_words.append([vocab[i] for i in top_idx])
 
         # 8. Instanciamos el modelo de coherencia de gensim pasándole los tópicos, los textos reales, el diccionario y la métrica deseada ('c_v')
@@ -151,34 +156,34 @@ def fit_lda_model(X: Any, k: int, random_state: Optional[int], max_iter: int = 5
     return lda_final, doc_topic_matrix, topic_dominante
 
 
-def get_top_words_per_topic(model: LatentDirichletAllocation, vocab: np.ndarray, k_final: int, n_top_words: int) -> \
-Dict[int, List[str]]:
-    """
-    Extrae las palabras más representativas de cada tópico basándose en los pesos asignados
-    por el modelo LDA a los términos del vocabulario.
+def filter_subngrams(words_list: List[str]) -> List[str]:
+    # Primero eliminamos duplicados manteniendo el orden
+    seen = []
+    for w in words_list:
+        if w not in seen:
+            seen.append(w)
 
-    Args:
-        model (LatentDirichletAllocation): El modelo LDA de scikit-learn ya entrenado.
-        vocab (np.ndarray): Un array de NumPy que contiene el vocabulario real del modelo.
-        k_final (int): El número de tópicos generados en el modelo.
-        n_top_words (int): El número de palabras clave principales a extraer para cada tópico.
+    # Luego filtramos sub-ngramas
+    filtered = []
+    for word in seen:
+        is_redundant = any(
+            word != other and word in other
+            for other in seen
+        )
+        if not is_redundant:
+            filtered.append(word)
+    return filtered
 
-    Returns:
-        Dict[int, List[str]]: Un diccionario donde la clave es el identificador del tópico (entero)
-        y el valor es una lista con las palabras (strings) de mayor peso asociadas a él.
-    """
-    # 1. Inicializamos un diccionario vacío para relacionar cada ID de tópico con sus mejores palabras
+
+def get_top_words_per_topic(model, vocab, k_final, n_top_words):
     palabras_por_topic = {}
 
-    # 2. Iteramos a través de todos los tópicos creados (de 0 hasta k_final - 1)
     for i in range(k_final):
-        # 3. Obtenemos los pesos de los términos para el tópico actual (model.components_[i]).
-        # Ordenamos los índices con argsort(), los invertimos ([::-1]) para tener mayor a menor peso,
-        # y cortamos la lista para obtener exactamente n_top_words.
         top_idx = model.components_[i].argsort()[::-1][:n_top_words]
+        top_words = [vocab[j] for j in top_idx]
 
-        # 4. Traducimos los índices extraídos a sus correspondientes palabras en el array del vocabulario
-        # y las guardamos en la posición del diccionario.
-        palabras_por_topic[i] = [vocab[j] for j in top_idx]
+        print(f"  Tópico {i} antes de filtrar: {top_words}")  # ← debug temporal
+        palabras_por_topic[i] = filter_subngrams(top_words)
+        print(f"  Tópico {i} después de filtrar: {palabras_por_topic[i]}")  # ← debug temporal
 
     return palabras_por_topic
