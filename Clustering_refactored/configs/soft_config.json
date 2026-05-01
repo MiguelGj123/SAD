@@ -40,6 +40,7 @@
   },
   "model": {
     "n_topics_range": [3, 4, 5, 6, 7, 8, 9, 10],
+    "forced_k_pos": 5,
     "forced_k_neg": null,
     "processes": 1,
     "eval_max_iter": 15,
@@ -75,6 +76,10 @@
     "use", "great", "love", "one", "every", "much", "lot", "there", "thing",
     "ve", "new", "ever", "like", "experience", "overall", "make", "really",
     "want", "time", "play", "free", "many", "some", "other", "way",
-    "without", "because", "well", "good"
+    "without", "because", "well", "good",
+    "don", "doesn", "does", "not", "no", "won", "didn", "isn", "aren", "wasn",
+    "please", "fix", "work", "working", "know", "let", "give", "always", "never",
+    "keep", "keeps", "feel", "feels", "makes", "reason", "longer", "issue",
+    "problem", "update", "part", "over", "nothing", "everything", "something"
   ]
 }

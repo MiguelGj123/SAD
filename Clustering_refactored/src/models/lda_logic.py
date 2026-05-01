@@ -1,4 +1,6 @@
 import numpy as np
+import scipy.sparse as sp
+import matplotlib.pyplot as plt
 from sklearn.decomposition import LatentDirichletAllocation
 from typing import List, Tuple, Dict, Any, Optional
 import warnings
@@ -6,102 +8,76 @@ import warnings
 warnings.filterwarnings('ignore')
 
 
+# --- Modificación en evaluate_lda_coherence_gensim ---
 def evaluate_lda_coherence_gensim(X: Any, tokenized_texts: List[List[str]], vocab: np.ndarray, k_range: List[int],
-                                  random_state: Optional[int], processes: int, max_iter: int = 15,
-                                  top_words_for_eval: int = 20) -> List[float]:
+                                  random_state: Optional[int], processes: int, max_iter: int = 15) -> List[float]:
     """
-    Calcula la métrica de coherencia c_v utilizando la librería gensim. Esta métrica es la
-    recomendada en la literatura académica por ser más robusta y alineada con la interpretación
-    humana que la log-verosimilitud (log-likelihood).
-
-    Args:
-        X (Any): Matriz documento-término vectorizada sobre la que se ajustará el modelo LDA.
-        tokenized_texts (List[List[str]]): Lista de documentos, donde cada documento es una lista de tokens (palabras).
-        vocab (np.ndarray): Un array de NumPy que contiene el vocabulario completo asociado a las columnas de X.
-        k_range (List[int]): Lista de enteros que representan el número de tópicos (K) a evaluar.
-        random_state (Optional[int]): Semilla aleatoria para garantizar la reproducibilidad.
-        processes (int): Número de procesos (workers) a utilizar para paralelizar el cálculo en gensim.
-        max_iter (int, opcional): Número máximo de iteraciones para el algoritmo LDA. Por defecto 15.
-        top_words_for_eval (int, opcional): Número de palabras principales por tópico a considerar para evaluar la coherencia. Por defecto 20.
-
-    Returns:
-        List[float]: Una lista con las puntuaciones de coherencia c_v calculadas para cada valor de K.
+    Calcula la métrica de coherencia c_v utilizando gensim.
+    Versión robusta: reconstruye los textos desde la matriz X para soportar n-gramas
+    generados por CountVectorizer y evitar listas vacías.
     """
-    # 1. Importamos internamente las clases necesarias de gensim para evitar dependencias globales estrictas si no se usa esta función
     from gensim.models import CoherenceModel
     from gensim.corpora import Dictionary
 
-    # 2. Creamos un diccionario de gensim a partir de los textos tokenizados. Esto mapea cada palabra única a un ID.
-    diccionario = Dictionary(tokenized_texts)
+    # 1. Reconstruir los textos reales desde la matriz X
+    # Esto asegura que si usas bigramas/trigramas, Gensim los procese correctamente.
+    real_texts = []
+    X_csr = X.tocsr() if sp.issparse(X) else sp.csr_matrix(X)
 
-    # 3. Inicializamos una lista vacía para ir almacenando la puntuación de coherencia de cada K
-    scores = []
+    for i in range(X_csr.shape[0]):
+        row_indices = X_csr.indices[X_csr.indptr[i]:X_csr.indptr[i + 1]]
+        doc_words = [vocab[idx] for idx in row_indices]
+        real_texts.append(doc_words)
 
-    # 4. Iteramos sobre cada número de tópicos (K) proporcionado en el rango
+    # 2. Creamos el diccionario de gensim con estos textos alineados
+    diccionario = Dictionary(real_texts)
+
+    coherence_scores = []
+
     for k in k_range:
-        # 5. Instanciamos el modelo LDA de scikit-learn indicando número de componentes, semilla y límite de iteraciones
-        lda = LatentDirichletAllocation(n_components=k, random_state=random_state, max_iter=max_iter)
-
-        # 6. Ajustamos el modelo a nuestra matriz de características X
+        # Usamos n_jobs=-1 para acelerar el ajuste
+        lda = LatentDirichletAllocation(n_components=k, random_state=random_state, max_iter=max_iter, n_jobs=-1)
         lda.fit(X)
 
-        # 7. Convertimos los tópicos generados por sklearn a un formato compatible con gensim (una lista de listas de palabras)
+        # Extraer top words para enviarlas a Gensim
         topics_words = []
         for topic_idx in range(k):
-            # argsort() ordena los índices por su peso; [::-1] los invierte (de mayor a menor); [:top_words_for_eval] recorta los top N
-            top_idx = lda.components_[topic_idx].argsort()[::-1][:top_words_for_eval]
-            all_words = [vocab[i] for i in top_idx]
-            valid_words = [w for w in all_words if w in diccionario.token2id]
+            top_idx = lda.components_[topic_idx].argsort()[::-1][:20]
+            words = [vocab[i] for i in top_idx]
 
-            if not valid_words:
-                return None
+            # Seguro contra fallos de Gensim: no permitir listas vacías
+            if not words:
+                words = ['dummy_fallback_word']
 
-                # Mapeamos esos índices al vocabulario real y añadimos la lista de palabras del tópico a nuestra lista principal
-            topics_words.append([vocab[i] for i in top_idx])
+            topics_words.append(words)
 
-        # 8. Instanciamos el modelo de coherencia de gensim pasándole los tópicos, los textos reales, el diccionario y la métrica deseada ('c_v')
-        cm_model = CoherenceModel(
-            topics=topics_words, texts=tokenized_texts,
-            dictionary=diccionario, coherence='c_v', processes=processes
-        )
+        # 3. Calcular Coherencia usando los textos reales reconstruidos
+        cm = CoherenceModel(topics=topics_words, texts=real_texts,
+                            dictionary=diccionario, coherence='c_v', processes=processes)
+        coherence_scores.append(cm.get_coherence())
 
-        # 9. Calculamos la coherencia global del modelo actual y la añadimos a la lista de resultados
-        scores.append(cm_model.get_coherence())
-
-    return scores
+    return coherence_scores
 
 
-def evaluate_lda_loglikelihood(X: Any, k_range: List[int], random_state: Optional[int], max_iter: int = 20) -> List[
-    float]:
+def evaluate_lda_loglikelihood(X: Any, k_range: List[int], random_state: Optional[int],
+                               max_iter: int = 20) -> Tuple[List[float], List[float]]:
     """
-    Método de respaldo (fallback) que calcula la log-verosimilitud (log-likelihood) utilizando
-    scikit-learn. Se utiliza generalmente si gensim no está instalado. En esta métrica,
-    un valor mayor (menos negativo) indica un mejor ajuste.
-
-    Args:
-        X (Any): Matriz documento-término vectorizada.
-        k_range (List[int]): Lista de enteros que representan los valores de K a evaluar.
-        random_state (Optional[int]): Semilla aleatoria para la reproducibilidad.
-        max_iter (int, opcional): Número máximo de iteraciones. Por defecto 20.
-
-    Returns:
-        List[float]: Una lista con las puntuaciones de log-verosimilitud para cada K.
+    Calcula log-likelihood Y perplejidad para cada K.
+    Devuelve dos listas en lugar de una.
     """
-    # 1. Inicializamos la lista de puntuaciones vacía
-    scores = []
+    scores_ll = []
+    scores_perp = []
 
-    # 2. Iteramos sobre cada número de tópicos (K) a evaluar
     for k in k_range:
-        # 3. Instanciamos el modelo LDA configurando n_jobs=-1 para usar todos los núcleos disponibles del procesador
-        lda = LatentDirichletAllocation(n_components=k, random_state=random_state, max_iter=max_iter, n_jobs=-1)
-
-        # 4. Ajustamos el modelo a los datos X
+        lda = LatentDirichletAllocation(
+            n_components=k, random_state=random_state,
+            max_iter=max_iter, n_jobs=-1
+        )
         lda.fit(X)
+        scores_ll.append(lda.score(X))
+        scores_perp.append(lda.perplexity(X))  # ← nuevo
 
-        # 5. Calculamos la puntuación (log-likelihood aproximado de los datos dados el modelo) y la guardamos
-        scores.append(lda.score(X))
-
-    return scores
+    return scores_ll, scores_perp
 
 
 def get_optimal_topics_from_scores(scores: List[float], k_range: List[int]) -> int:
@@ -187,3 +163,46 @@ def get_top_words_per_topic(model, vocab, k_final, n_top_words):
         print(f"  Tópico {i} después de filtrar: {palabras_por_topic[i]}")  # ← debug temporal
 
     return palabras_por_topic
+
+
+def export_lda_dual_metric_plot(x_values: List[int], coherence_values: List[float],
+                                perplexity_values: List[float], optimal_x: int,
+                                title: str, filepath: str,
+                                figsize: Tuple[int, int] = (14, 5), dpi: int = 200) -> None:
+    """
+    Genera un gráfico comparativo con dos ejes Y:
+    - Izquierda: Coherencia (C_v) -> Cuanto más alto, mejor.
+    - Derecha: Perplejidad -> Cuanto más bajo, mejor (métrica del codo).
+    """
+    fig, ax1 = plt.subplots(figsize=figsize)
+
+    # Eje primario: Coherencia
+    color_coh = 'tab:blue'
+    ax1.set_xlabel('Número de Topics (K)')
+    ax1.set_ylabel('Coherence Score (C_v)', color=color_coh)
+    ax1.plot(x_values, coherence_values, 'bo-', linewidth=2, markersize=8, label='Coherencia (C_v)')
+    ax1.tick_params(axis='y', labelcolor=color_coh)
+    ax1.grid(alpha=0.3)
+
+    # Eje secundario: Perplejidad
+    ax2 = ax1.twinx()
+    color_perp = 'tab:red'
+    ax2.set_ylabel('Perplejidad (Log-Likelihood)', color=color_perp)
+    ax2.plot(x_values, perplexity_values, 'rs--', linewidth=2, markersize=8, alpha=0.6, label='Perplejidad')
+    ax2.tick_params(axis='y', labelcolor=color_perp)
+
+    # Línea vertical en el óptimo
+    ax1.axvline(x=optimal_x, color='green', linestyle=':', linewidth=2,
+                label=f'K óptimo detectado: {optimal_x}')
+
+    # Unificar leyendas de ambos ejes
+    lines, labels = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines + lines2, labels + labels2, loc='upper left')
+
+    plt.title(title)
+    plt.tight_layout()
+
+    # Guardar y cerrar
+    plt.savefig(filepath, dpi=dpi, bbox_inches='tight')
+    plt.close()
