@@ -39,7 +39,7 @@
     }
   },
   "model": {
-    "n_topics_range": [3, 4, 5, 6, 7, 8],
+    "n_topics_range": [3, 4, 5, 6, 7, 8, 9, 10],
     "forced_k_neg": null,
     "processes": 1,
     "eval_max_iter": 15,
