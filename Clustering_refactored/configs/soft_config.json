@@ -29,18 +29,18 @@
   "features_by_sentiment": {
     "positivo": {
       "min_words": 4,
-      "min_df": 6,
+      "min_df": 2,
       "max_df": 0.75
     },
     "negativo": {
       "min_words": 6,
-      "min_df": 8,
+      "min_df": 2,
       "max_df": 0.7
     }
   },
   "model": {
     "n_topics_range": [3, 4, 5, 6, 7, 8, 9, 10],
-    "forced_k_pos": 5,
+    "forced_k_pos": null,
     "forced_k_neg": null,
     "processes": 1,
     "eval_max_iter": 15,
